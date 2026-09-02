@@ -1,0 +1,20 @@
+name: Publish scheduled Instagram posts
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call publishing endpoint
+        env:
+          PUBLISH_API_TOKEN: ${{ secrets.PUBLISH_API_TOKEN }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          curl --fail-with-body --show-error --silent \
+            -X POST \
+            -H "Authorization: Bearer $PUBLISH_API_TOKEN" \
+            "$APP_URL/api/pipeline/publish"

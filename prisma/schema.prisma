@@ -28,6 +28,7 @@ enum PostStatus {
   generating
   pending_approval
   scheduled
+  publishing
   published
   rejected
   error
