@@ -9,9 +9,11 @@ Instagram.
 
 - **Escopo v1**: só carrossel (imagem). Vídeo/Reels fica para uma fase
   futura, fora de escopo agora.
-- **Hospedagem**: 100% free tier — sem VPS. Render (Web Service free,
-  Next.js) + Neon (Postgres free, via Prisma) + Cloudinary (free, storage de
-  imagem) + GitHub Actions (cron gratuito).
+- **Hospedagem**: 100% free tier — sem VPS, sem Docker. Vercel (Next.js,
+  Fluid Compute — já suporta Playwright/pacotes de até 5GB e reaproveita
+  instância de função, então o render dos slides roda nas próprias rotas de
+  API) + Neon (Postgres free, via Prisma) + Cloudinary (free, storage de
+  imagem) + GitHub Actions (cron gratuito, inalterado).
 - **Postagem**: API oficial do Instagram (Graph API), nunca automação
   não-oficial — risco de banimento é inaceitável para uma conta que posta
   todo dia.
@@ -37,10 +39,11 @@ Instagram.
   + `deviceScaleFactor` 2x/3x — não é um "print de tela", é renderização
   controlada, sem perda de qualidade).
 - **Fontes de imagem**: combinação de banco de imagens com licença
-  (Unsplash/Pexels) e scraping de imagens reais da web (via Scrapling). A
-  origem de cada imagem fica visível no dashboard para o usuário poder
-  vetar uma imagem raspada específica antes de aprovar (risco de direito
-  autoral aceito conscientemente pelo usuário, mitigado por revisão manual).
+  (Unsplash/Pexels) e scraping de imagens reais da web (fetch + parsing de
+  HTML em TypeScript — sem subprocesso Python, sem Docker). A origem de
+  cada imagem fica visível no dashboard para o usuário poder vetar uma
+  imagem raspada específica antes de aprovar (risco de direito autoral
+  aceito conscientemente pelo usuário, mitigado por revisão manual).
 - **Provedores de IA configuráveis por etapa**: NVIDIA NIM (grátis) e Claude
   (Anthropic, pago) por trás de uma interface comum, escolhidos via
   variável de ambiente por tarefa — o usuário pode rodar 100% grátis (só
@@ -99,11 +102,11 @@ GitHub Actions (cron, grátis)
    ├─ diário: POST /api/pipeline/discover      (dispara scraping de temas)
    └─ a cada N min: POST /api/pipeline/publish  (checa agendados e publica)
 
-Render (Web Service free — Next.js, App Router, TypeScript)
+Vercel (Next.js, App Router, TypeScript — Fluid Compute)
    ├─ dashboard kanban (admin único, auth via iron-session, como no
    │  personal-hub do usuário)
-   ├─ /api/pipeline/discover   → Scrapling busca temas + imagens de
-   │                             referência; grava Theme (status: pending)
+   ├─ /api/pipeline/discover   → scraping em TypeScript busca temas + imagens
+   │                             de referência; grava Theme (status: pending)
    ├─ /api/pipeline/generate   → após aprovação de tema: gera copy (LLM),
    │                             monta o HTML por slide (template
    │                             determinístico, sem IA), renderiza PNG
@@ -112,8 +115,8 @@ Render (Web Service free — Next.js, App Router, TypeScript)
    ├─ /api/pipeline/publish    → publica carrossel aprovado+agendado via
    │                             Instagram Graph API; após sucesso, apaga as
    │                             imagens dos slides no Cloudinary
-   └─ Playwright roda dentro das rotas de API (por isso não pode ser
-      serverless/Vercel — precisa de processo persistente)
+   └─ Playwright roda dentro das rotas de API (Fluid Compute suporta pacotes
+      de até 5GB e reaproveita instância de função entre requisições)
 
 Neon (Postgres free, via Prisma)
    └─ Theme, Post, Slide, histórico
@@ -122,8 +125,8 @@ Cloudinary (free tier)
    └─ imagens finais dos slides (PNG), com CDN
 
 Serviços externos chamados pelo app
-   ├─ Scrapling            → scraping de notícias/tendências de tech +
-   │                         imagens de referência/reais
+   ├─ scraping (TS/fetch)  → notícias/tendências de tech + imagens de
+   │                         referência/reais
    ├─ Unsplash/Pexels API  → banco de imagens com licença
    ├─ NVIDIA NIM / Claude  → texto e visão, escolhido por config por tarefa
    └─ Instagram Graph API  → publicação do carrossel
@@ -132,7 +135,7 @@ Serviços externos chamados pelo app
 ## Fluxo (ciclo de vida de um post)
 
 ```
-Tema sugerido (Scrapling + LLM)
+Tema sugerido (scraping TS + LLM)
    │  [usuário aprova/rejeita o tema no kanban]
    ▼
 Tema aprovado → gerando carrossel (copy + slides + imagens)
@@ -206,5 +209,5 @@ nesta fase (mesma decisão do personal-hub).
 
 - **Direito autoral de imagens raspadas**: mitigado por revisão manual no
   dashboard (origem da imagem sempre visível antes de aprovar).
-- **Dependência de free tiers** (Render, Neon, Cloudinary, NVIDIA NIM):
+- **Dependência de free tiers** (Vercel, Neon, Cloudinary, NVIDIA NIM):
   aceitável para volume de 1 post/dia; reavaliar se o volume crescer.

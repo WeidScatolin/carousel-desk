@@ -4,55 +4,60 @@
 
 **Goal:** Descobrir diariamente notícias recentes de tecnologia, transformá-las em sugestões editoriais validadas e persistir temas pendentes sem duplicar a URL de origem.
 
-**Architecture:** Um script Python isolado usa Scrapling para buscar e normalizar notícias e emite um único documento JSON pela stdout. O Next.js executa esse processo, valida a fronteira com Zod, aplica seleção e reescrita por um provedor de IA configurável e persiste os temas por uma rota autenticada, acionada diariamente pelo GitHub Actions.
+**Architecture:** Um módulo TypeScript busca e normaliza notícias direto no processo do Next.js (fetch + cheerio, sem subprocesso e sem runtime separado). A rota de API valida a fronteira, aplica seleção e reescrita por um provedor de IA configurável e persiste os temas, acionada diariamente pelo GitHub Actions.
 
-**Tech Stack:** Python 3.10+, Scrapling, pytest, Next.js 16 App Router, TypeScript, Zod, Vitest, Prisma 7, PostgreSQL/Neon, GitHub Actions, Docker multi-stage com Node.js 22 e Python 3.
+**Tech Stack:** Next.js 16 App Router, TypeScript, cheerio, Zod, Vitest, Prisma 7, PostgreSQL/Neon, GitHub Actions. Hospedagem em Vercel (Fluid Compute) — sem Docker, sem runtime Python.
 
 **Spec:** `docs/superpowers/specs/2026-09-02-carousel-desk-design.md`
 
 ## Global Constraints
 
-- Hospedagem 100% free tier: Render + Neon + GitHub Actions; sem VPS e sem serviço separado permanente para Python.
-- O script Python é um subprocesso efêmero e deve escrever exatamente um JSON válido na stdout; diagnóstico pertence à stderr.
-- Fontes ficam configuráveis pela constante `SOURCES` no topo de `scripts/scrape_themes.py`; o plano começa com TechCrunch, The Verge e Ars Technica.
+- Hospedagem 100% free tier: Vercel + Neon + GitHub Actions; sem VPS, sem Docker, sem runtime separado para scraping.
+- O scraper roda in-process (mesma função Next.js), sem subprocesso e sem contrato de stdout — a validação acontece direto nos tipos de retorno do parser.
+- Fontes ficam configuráveis pela constante `SOURCES` no topo de `src/lib/scraping/scrapeThemes.ts`; o plano começa com TechCrunch, The Verge e Ars Technica.
 - Cada candidato contém exatamente `sourceUrl`, `headline`, `summary` e `referenceImageUrls`; imagens são opcionais e limitadas a duas URLs absolutas por notícia.
-- Testes de scraping não acessam a rede: usam fixture HTML local e injeção do fetcher.
+- Testes de scraping não acessam a rede: usam HTML de fixture embutido no teste e injeção da função de fetch.
 - Provedor de IA por tarefa vem de `resolveProvider('THEME_SUGGESTION')` ou `resolveProvider('IMAGE_ANALYSIS')`; valores aceitos continuam sendo `"nvidia"` e `"claude"`.
 - `completeWithNvidia(prompt: string, model?: string): Promise<string>`, `completeWithClaude(prompt: string, model?: string): Promise<string>` e `loadDesignSystem(): string` são importados da fundação e não reimplementados.
 - A rota exige `Authorization: Bearer <DISCOVERY_API_TOKEN>` e falha fechada quando o segredo não está configurado ou não coincide.
 - `Theme.sourceUrl` deve ser `@unique`; deduplicação é garantida pelo banco e por `prisma.theme.upsert`.
 - Novos temas são gravados com `ThemeStatus.pending`; uma nova descoberta da mesma URL atualiza texto, mas não sobrescreve o status já decidido.
-- Sem fila e sem retry automático; erros do subprocesso, da IA ou do banco produzem resposta HTTP 500 e o próximo cron tenta novamente.
+- Sem fila e sem retry automático; erros do scraper, da IA ou do banco produzem resposta HTTP 500 e o próximo cron tenta novamente.
 - TypeScript sem `any`, parâmetros e retornos exportados explícitos, imutabilidade, funções menores que 50 linhas e sem `console.log`.
 - Testes seguem Arrange-Act-Assert; cobertura mínima de 80% para lógica de pipeline e rota.
 
 ---
 
-### Task 1: Dependências Python e parser de fixture
+### Task 1: Scraper de temas em TypeScript (fetch + cheerio)
 
 **Files:**
-- Create: `requirements.txt`
-- Create: `tests/python/fixtures/tech_news.html`
-- Create: `tests/python/test_scrape_themes.py`
-- Create: `scripts/scrape_themes.py`
+- Modify: `package.json` (adicionar `cheerio`)
+- Create: `src/lib/scraping/scrapeThemes.ts`
+- Test: `src/lib/scraping/scrapeThemes.test.ts`
 
 **Interfaces:**
-- Consumes: Python 3.10+; pacote `scrapling[fetchers]>=0.4.8,<0.5`
-- Produces: `parse_source(html: str, source: SourceConfig) -> list[dict[str, object]]`; `normalize_url(base_url: str, value: str) -> str`
+- Consumes: `fetch` global do Node 22; pacote `cheerio`
+- Produces: `interface SourceConfig { url: string; articleSelector: string; linkSelector: string; headlineSelector: string; summarySelector: string; imageSelector: string }`; `interface ScrapedCandidate { sourceUrl: string; headline: string; summary: string; referenceImageUrls: string[] }`; `function normalizeUrl(baseUrl: string, value: string): string`; `function parseSource(html: string, source: SourceConfig): ScrapedCandidate[]`; `function scrapeThemes(fetchHtml?: (url: string) => Promise<string>): Promise<ScrapedCandidate[]>`
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [ ] **Step 1: Adicionar a dependência**
 
-`requirements.txt`:
+Em `package.json`, adicionar em `dependencies`:
 
-```text
-scrapling[fetchers]>=0.4.8,<0.5
-pytest>=8.3,<9
+```json
+"cheerio": "^1.0.0"
 ```
 
-`tests/python/fixtures/tech_news.html`:
+Run: `npm install`
 
-```html
-<!doctype html>
+- [ ] **Step 2: Escrever o teste que falha**
+
+`src/lib/scraping/scrapeThemes.test.ts`:
+
+```ts
+import { describe, expect, test } from 'vitest';
+import { normalizeUrl, parseSource, scrapeThemes, type SourceConfig } from './scrapeThemes';
+
+const FIXTURE_HTML = `<!doctype html>
 <html lang="en">
   <body>
     <article class="story">
@@ -70,434 +75,92 @@ pytest>=8.3,<9
       <a class="story-link" href=""><h2>Broken item</h2></a>
     </article>
   </body>
-</html>
-```
-
-`tests/python/test_scrape_themes.py`:
-
-```python
-from pathlib import Path
-
-from scripts.scrape_themes import SourceConfig, normalize_url, parse_source
-
-
-FIXTURE = Path(__file__).parent / "fixtures" / "tech_news.html"
-SOURCE = SourceConfig(
-    url="https://news.example.com/latest",
-    article_selector="article.story",
-    link_selector="a.story-link",
-    headline_selector="h2",
-    summary_selector="p.dek",
-    image_selector="img",
-)
-
-
-def test_parse_source_extracts_normalized_candidates_and_two_images() -> None:
-    # Arrange
-    html = FIXTURE.read_text(encoding="utf-8")
-
-    # Act
-    candidates = parse_source(html, SOURCE)
-
-    # Assert
-    assert candidates == [
-        {
-            "sourceUrl": "https://news.example.com/ai/new-model",
-            "headline": "New AI model ships",
-            "summary": "The release lowers inference costs for small teams.",
-            "referenceImageUrls": [
-                "https://news.example.com/images/model.jpg",
-                "https://cdn.example.com/chart.png",
-            ],
-        },
-        {
-            "sourceUrl": "https://news.example.com/security/passkeys",
-            "headline": "Passkeys reach more users",
-            "summary": "A platform update expands passwordless sign-in.",
-            "referenceImageUrls": [],
-        },
-    ]
-
-
-def test_normalize_url_rejects_non_http_protocols() -> None:
-    # Arrange / Act / Assert
-    assert normalize_url("https://news.example.com", "javascript:alert(1)") == ""
-    assert normalize_url("https://news.example.com", "data:image/png;base64,abc") == ""
-```
-
-- [ ] **Step 2: Rodar o teste, confirmar que falha**
-
-Run: `python3 -m pip install -r requirements.txt && python3 -m pytest tests/python/test_scrape_themes.py -q`
-
-Expected: FAIL com `ModuleNotFoundError: No module named 'scripts.scrape_themes'`.
-
-- [ ] **Step 3: Implementar**
-
-`scripts/scrape_themes.py` (primeira versão, somente parsing; a Task 2 adicionará fetch e CLI):
-
-```python
-from dataclasses import dataclass
-from urllib.parse import urljoin, urlparse
-
-from scrapling.parser import Selector
-
-
-@dataclass(frozen=True)
-class SourceConfig:
-    url: str
-    article_selector: str
-    link_selector: str
-    headline_selector: str
-    summary_selector: str
-    image_selector: str
-
-
-SOURCES: tuple[SourceConfig, ...] = (
-    SourceConfig("https://techcrunch.com/latest/", "article", "a", "h2, h3", "p", "img"),
-    SourceConfig("https://www.theverge.com/tech", "article", "a", "h2, h3", "p", "img"),
-    SourceConfig("https://arstechnica.com/gadgets/", "article", "a", "h2, h3", "p", "img"),
-)
-
-
-def normalize_url(base_url: str, value: str) -> str:
-    candidate = urljoin(base_url, value.strip())
-    return candidate if urlparse(candidate).scheme in {"http", "https"} else ""
-
-
-def first_text(node: Selector, selector: str) -> str:
-    match = node.css(selector).first
-    return " ".join(match.text.split()) if match is not None else ""
-
-
-def image_urls(node: Selector, source_url: str, selector: str) -> list[str]:
-    values: list[str] = []
-    for image in node.css(selector):
-        raw = image.attrib.get("src") or image.attrib.get("data-src") or ""
-        normalized = normalize_url(source_url, raw)
-        if normalized and normalized not in values:
-            values = [*values, normalized]
-        if len(values) == 2:
-            break
-    return values
-
-
-def parse_source(html: str, source: SourceConfig) -> list[dict[str, object]]:
-    page = Selector(html)
-    candidates: list[dict[str, object]] = []
-    for article in page.css(source.article_selector):
-        link = article.css(source.link_selector).first
-        source_url = normalize_url(source.url, link.attrib.get("href", "") if link else "")
-        headline = first_text(article, source.headline_selector)
-        if not source_url or not headline:
-            continue
-        candidates = [*candidates, {
-            "sourceUrl": source_url,
-            "headline": headline,
-            "summary": first_text(article, source.summary_selector),
-            "referenceImageUrls": image_urls(article, source.url, source.image_selector),
-        }]
-    return candidates
-```
-
-- [ ] **Step 4: Rodar o teste, confirmar que passa**
-
-Run: `python3 -m pytest tests/python/test_scrape_themes.py -q`
-
-Expected: PASS (2 testes).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add requirements.txt scripts/scrape_themes.py tests/python/fixtures/tech_news.html tests/python/test_scrape_themes.py
-git commit -m "test: add theme scraper parsing contract"
-```
-
----
-
-### Task 2: Execução do scraper e contrato JSON na stdout
-
-**Files:**
-- Modify: `scripts/scrape_themes.py`
-- Modify: `tests/python/test_scrape_themes.py`
-
-**Interfaces:**
-- Consumes: `SOURCES`; `parse_source(html: str, source: SourceConfig) -> list[dict[str, object]]`; `StealthyFetcher.fetch(url: str, headless: bool, network_idle: bool)`
-- Produces: `scrape_themes(fetch_html: Callable[[str], str]) -> list[dict[str, object]]`; `main() -> None`; stdout `{"candidates": [...]}`
-
-- [ ] **Step 1: Escrever o teste que falha**
-
-Acrescentar a `tests/python/test_scrape_themes.py`:
-
-```python
-import json
-import subprocess
-import sys
-from collections.abc import Callable
-
-import scripts.scrape_themes as scraper
-
-
-def test_scrape_themes_deduplicates_source_urls(monkeypatch) -> None:
-    # Arrange
-    html = FIXTURE.read_text(encoding="utf-8")
-    monkeypatch.setattr(scraper, "SOURCES", (SOURCE, SOURCE))
-    fetch_html: Callable[[str], str] = lambda _url: html
-
-    # Act
-    candidates = scraper.scrape_themes(fetch_html)
-
-    # Assert
-    assert len(candidates) == 2
-    assert candidates[0]["sourceUrl"] == "https://news.example.com/ai/new-model"
-
-
-def test_cli_prints_one_json_document(monkeypatch, capsys) -> None:
-    # Arrange
-    expected = [{
-        "sourceUrl": "https://news.example.com/item",
-        "headline": "Headline",
-        "summary": "Summary",
-        "referenceImageUrls": [],
-    }]
-    monkeypatch.setattr(scraper, "scrape_themes", lambda _fetch: expected)
-
-    # Act
-    scraper.main()
-
-    # Assert
-    captured = capsys.readouterr()
-    assert json.loads(captured.out) == {"candidates": expected}
-    assert captured.err == ""
-    assert captured.out.count("\n") == 1
-```
-
-- [ ] **Step 2: Rodar o teste, confirmar que falha**
-
-Run: `python3 -m pytest tests/python/test_scrape_themes.py -q`
-
-Expected: FAIL com `AttributeError: module 'scripts.scrape_themes' has no attribute 'scrape_themes'`.
-
-- [ ] **Step 3: Implementar**
-
-Substituir `scripts/scrape_themes.py` pelo arquivo completo:
-
-```python
-import json
-from collections.abc import Callable
-from dataclasses import dataclass
-from urllib.parse import urljoin, urlparse
-
-from scrapling.fetchers import StealthyFetcher
-from scrapling.parser import Selector
-
-
-@dataclass(frozen=True)
-class SourceConfig:
-    url: str
-    article_selector: str
-    link_selector: str
-    headline_selector: str
-    summary_selector: str
-    image_selector: str
-
-
-SOURCES: tuple[SourceConfig, ...] = (
-    SourceConfig("https://techcrunch.com/latest/", "article", "a", "h2, h3", "p", "img"),
-    SourceConfig("https://www.theverge.com/tech", "article", "a", "h2, h3", "p", "img"),
-    SourceConfig("https://arstechnica.com/gadgets/", "article", "a", "h2, h3", "p", "img"),
-)
-
-
-def normalize_url(base_url: str, value: str) -> str:
-    candidate = urljoin(base_url, value.strip())
-    return candidate if urlparse(candidate).scheme in {"http", "https"} else ""
-
-
-def first_text(node: Selector, selector: str) -> str:
-    match = node.css(selector).first
-    return " ".join(match.text.split()) if match is not None else ""
-
-
-def image_urls(node: Selector, source_url: str, selector: str) -> list[str]:
-    values: list[str] = []
-    for image in node.css(selector):
-        raw = image.attrib.get("src") or image.attrib.get("data-src") or ""
-        normalized = normalize_url(source_url, raw)
-        if normalized and normalized not in values:
-            values = [*values, normalized]
-        if len(values) == 2:
-            break
-    return values
-
-
-def parse_source(html: str, source: SourceConfig) -> list[dict[str, object]]:
-    page = Selector(html)
-    candidates: list[dict[str, object]] = []
-    for article in page.css(source.article_selector):
-        link = article.css(source.link_selector).first
-        source_url = normalize_url(source.url, link.attrib.get("href", "") if link else "")
-        headline = first_text(article, source.headline_selector)
-        if not source_url or not headline:
-            continue
-        candidates = [*candidates, {
-            "sourceUrl": source_url,
-            "headline": headline,
-            "summary": first_text(article, source.summary_selector),
-            "referenceImageUrls": image_urls(article, source.url, source.image_selector),
-        }]
-    return candidates
-
-
-def fetch_html(url: str) -> str:
-    page = StealthyFetcher.fetch(url, headless=True, network_idle=True)
-    return page.html_content
-
-
-def scrape_themes(fetch: Callable[[str], str]) -> list[dict[str, object]]:
-    by_url: dict[str, dict[str, object]] = {}
-    for source in SOURCES:
-        for candidate in parse_source(fetch(source.url), source):
-            by_url = {**by_url, str(candidate["sourceUrl"]): candidate}
-    return list(by_url.values())
-
-
-def main() -> None:
-    payload = {"candidates": scrape_themes(fetch_html)}
-    print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
-
-
-if __name__ == "__main__":
-    main()
-```
-
-- [ ] **Step 4: Rodar o teste, confirmar que passa**
-
-Run: `python3 -m pytest tests/python/test_scrape_themes.py -q`
-
-Expected: PASS (4 testes), sem acesso à rede.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add scripts/scrape_themes.py tests/python/test_scrape_themes.py
-git commit -m "feat: scrape technology theme candidates"
-```
-
----
-
-### Task 3: Wrapper Node validado com Zod
-
-**Files:**
-- Create: `src/lib/scraping/runScrapeThemes.ts`
-- Test: `src/lib/scraping/runScrapeThemes.test.ts`
-
-**Interfaces:**
-- Consumes: `execFile(file: string, args: readonly string[], callback)`; stdout do script `{"candidates": [...]}`
-- Produces: `interface ScrapedCandidate { sourceUrl: string; headline: string; summary: string; referenceImageUrls: string[] }`; `runScrapeThemes(): Promise<ScrapedCandidate[]>`
-
-- [ ] **Step 1: Escrever o teste que falha**
-
-`src/lib/scraping/runScrapeThemes.test.ts`:
-
-```ts
-import { beforeEach, describe, expect, test, vi } from 'vitest';
-
-vi.mock('node:child_process', () => ({ execFile: vi.fn() }));
-
-import { execFile } from 'node:child_process';
-import { runScrapeThemes } from './runScrapeThemes';
-
-type ExecCallback = (error: Error | null, stdout: string, stderr: string) => void;
-
-describe('runScrapeThemes', () => {
-  beforeEach(() => vi.mocked(execFile).mockReset());
-
-  test('returns candidates parsed from the Python stdout', async () => {
-    // Arrange
-    vi.mocked(execFile).mockImplementation((_file, _args, callback) => {
-      (callback as ExecCallback)(null, JSON.stringify({ candidates: [{
-        sourceUrl: 'https://example.com/news',
-        headline: 'New chip',
-        summary: 'A faster chip shipped.',
-        referenceImageUrls: ['https://example.com/chip.jpg'],
-      }] }), '');
-      return {} as ReturnType<typeof execFile>;
-    });
-
-    // Act
-    const result = await runScrapeThemes();
+</html>`;
+
+const SOURCE: SourceConfig = {
+  url: 'https://news.example.com/latest',
+  articleSelector: 'article.story',
+  linkSelector: 'a.story-link',
+  headlineSelector: 'h2',
+  summarySelector: 'p.dek',
+  imageSelector: 'img',
+};
+
+describe('parseSource', () => {
+  test('extracts normalized candidates and at most two images each', () => {
+    // Arrange / Act
+    const candidates = parseSource(FIXTURE_HTML, SOURCE);
 
     // Assert
-    expect(result).toHaveLength(1);
-    expect(result[0]?.headline).toBe('New chip');
-    expect(execFile).toHaveBeenCalledWith(
-      'python3',
-      ['scripts/scrape_themes.py'],
-      expect.anything(),
-    );
+    expect(candidates).toEqual([
+      {
+        sourceUrl: 'https://news.example.com/ai/new-model',
+        headline: 'New AI model ships',
+        summary: 'The release lowers inference costs for small teams.',
+        referenceImageUrls: [
+          'https://news.example.com/images/model.jpg',
+          'https://cdn.example.com/chart.png',
+        ],
+      },
+      {
+        sourceUrl: 'https://news.example.com/security/passkeys',
+        headline: 'Passkeys reach more users',
+        summary: 'A platform update expands passwordless sign-in.',
+        referenceImageUrls: [],
+      },
+    ]);
+  });
+});
+
+describe('normalizeUrl', () => {
+  test('rejects non-http protocols', () => {
+    // Arrange / Act / Assert
+    expect(normalizeUrl('https://news.example.com', 'javascript:alert(1)')).toBe('');
+    expect(normalizeUrl('https://news.example.com', 'data:image/png;base64,abc')).toBe('');
   });
 
-  test('rejects with stderr when the process fails', async () => {
-    // Arrange
-    vi.mocked(execFile).mockImplementation((_file, _args, callback) => {
-      (callback as ExecCallback)(new Error('exit code 1'), '', 'browser launch failed');
-      return {} as ReturnType<typeof execFile>;
-    });
-
-    // Act / Assert
-    await expect(runScrapeThemes()).rejects.toThrow(
-      'runScrapeThemes: Python scraper failed: browser launch failed',
-    );
+  test('rejects an empty value instead of resolving to the base URL', () => {
+    // Arrange / Act / Assert
+    expect(normalizeUrl('https://news.example.com/latest', '')).toBe('');
   });
+});
 
-  test('rejects non-empty stderr even when the process exits successfully', async () => {
+describe('scrapeThemes', () => {
+  test('deduplicates candidates across sources by sourceUrl', async () => {
     // Arrange
-    vi.mocked(execFile).mockImplementation((_file, _args, callback) => {
-      (callback as ExecCallback)(null, '{"candidates":[]}', 'unexpected warning');
-      return {} as ReturnType<typeof execFile>;
-    });
+    const fetchHtml = async (_url: string): Promise<string> => FIXTURE_HTML;
 
-    // Act / Assert
-    await expect(runScrapeThemes()).rejects.toThrow('unexpected warning');
-  });
+    // Act
+    const candidates = await scrapeThemes(fetchHtml, [SOURCE, SOURCE]);
 
-  test('rejects malformed output at the process boundary', async () => {
-    // Arrange
-    vi.mocked(execFile).mockImplementation((_file, _args, callback) => {
-      (callback as ExecCallback)(null, '{"candidates":[{"headline":7}]}', '');
-      return {} as ReturnType<typeof execFile>;
-    });
-
-    // Act / Assert
-    await expect(runScrapeThemes()).rejects.toThrow('runScrapeThemes: invalid scraper output');
+    // Assert
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0]?.sourceUrl).toBe('https://news.example.com/ai/new-model');
   });
 });
 ```
 
-- [ ] **Step 2: Rodar o teste, confirmar que falha**
+- [ ] **Step 3: Rodar o teste, confirmar que falha**
 
-Run: `npm test -- runScrapeThemes.test.ts`
+Run: `npm test -- scrapeThemes.test.ts`
 
-Expected: FAIL com `Cannot find module './runScrapeThemes'`.
+Expected: FAIL com `Cannot find module './scrapeThemes'`.
 
-- [ ] **Step 3: Implementar**
+- [ ] **Step 4: Implementar**
 
-`src/lib/scraping/runScrapeThemes.ts`:
+`src/lib/scraping/scrapeThemes.ts`:
 
 ```ts
-import { execFile } from 'node:child_process';
-import { z } from 'zod';
+import * as cheerio from 'cheerio';
 
-const scrapedCandidateSchema = z.object({
-  sourceUrl: z.string().url(),
-  headline: z.string().trim().min(1),
-  summary: z.string(),
-  referenceImageUrls: z.array(z.string().url()).max(2),
-});
-
-const scraperOutputSchema = z.object({
-  candidates: z.array(scrapedCandidateSchema),
-});
+export interface SourceConfig {
+  url: string;
+  articleSelector: string;
+  linkSelector: string;
+  headlineSelector: string;
+  summarySelector: string;
+  imageSelector: string;
+}
 
 export interface ScrapedCandidate {
   sourceUrl: string;
@@ -506,57 +169,136 @@ export interface ScrapedCandidate {
   referenceImageUrls: string[];
 }
 
-function parseOutput(stdout: string): ScrapedCandidate[] {
+const MAX_REFERENCE_IMAGES = 2;
+
+export const SOURCES: readonly SourceConfig[] = [
+  {
+    url: 'https://techcrunch.com/latest/',
+    articleSelector: 'article',
+    linkSelector: 'a',
+    headlineSelector: 'h2, h3',
+    summarySelector: 'p',
+    imageSelector: 'img',
+  },
+  {
+    url: 'https://www.theverge.com/tech',
+    articleSelector: 'article',
+    linkSelector: 'a',
+    headlineSelector: 'h2, h3',
+    summarySelector: 'p',
+    imageSelector: 'img',
+  },
+  {
+    url: 'https://arstechnica.com/gadgets/',
+    articleSelector: 'article',
+    linkSelector: 'a',
+    headlineSelector: 'h2, h3',
+    summarySelector: 'p',
+    imageSelector: 'img',
+  },
+];
+
+export function normalizeUrl(baseUrl: string, value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
   try {
-    const parsed: unknown = JSON.parse(stdout);
-    return scraperOutputSchema.parse(parsed).candidates;
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`runScrapeThemes: invalid scraper output: ${detail}`);
+    const candidate = new URL(trimmed, baseUrl);
+    return candidate.protocol === 'http:' || candidate.protocol === 'https:'
+      ? candidate.toString()
+      : '';
+  } catch {
+    return '';
   }
 }
 
-export async function runScrapeThemes(): Promise<ScrapedCandidate[]> {
-  return new Promise((resolve, reject) => {
-    execFile('python3', ['scripts/scrape_themes.py'], (error, stdout, stderr) => {
-      if (error || stderr.trim()) {
-        const detail = stderr.trim() || error?.message || 'unknown process failure';
-        reject(new Error(`runScrapeThemes: Python scraper failed: ${detail}`));
-        return;
-      }
-      try {
-        resolve(parseOutput(stdout));
-      } catch (parseError) {
-        reject(parseError);
-      }
-    });
-  });
+function firstText(article: cheerio.Cheerio<import('domhandler').Element>, selector: string): string {
+  return article.find(selector).first().text().trim().replace(/\s+/g, ' ');
+}
+
+function imageUrls(
+  $: cheerio.CheerioAPI,
+  article: cheerio.Cheerio<import('domhandler').Element>,
+  sourceUrl: string,
+  selector: string,
+): string[] {
+  const normalized = article
+    .find(selector)
+    .toArray()
+    .map((element) => $(element).attr('src') ?? $(element).attr('data-src') ?? '')
+    .map((raw) => normalizeUrl(sourceUrl, raw))
+    .filter((url) => url.length > 0);
+
+  return Array.from(new Set(normalized)).slice(0, MAX_REFERENCE_IMAGES);
+}
+
+export function parseSource(html: string, source: SourceConfig): ScrapedCandidate[] {
+  const $ = cheerio.load(html);
+
+  return $(source.articleSelector)
+    .toArray()
+    .map((element) => {
+      const article = $(element);
+      const href = article.find(source.linkSelector).first().attr('href') ?? '';
+      return {
+        sourceUrl: normalizeUrl(source.url, href),
+        headline: firstText(article, source.headlineSelector),
+        summary: firstText(article, source.summarySelector),
+        referenceImageUrls: imageUrls($, article, source.url, source.imageSelector),
+      };
+    })
+    .filter((candidate) => candidate.sourceUrl.length > 0 && candidate.headline.length > 0);
+}
+
+async function defaultFetchHtml(url: string): Promise<string> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`scrapeThemes: request to ${url} failed with status ${response.status}`);
+  }
+  return response.text();
+}
+
+export async function scrapeThemes(
+  fetchHtml: (url: string) => Promise<string> = defaultFetchHtml,
+  sources: readonly SourceConfig[] = SOURCES,
+): Promise<ScrapedCandidate[]> {
+  const bySourceUrl = new Map<string, ScrapedCandidate>();
+
+  for (const source of sources) {
+    const html = await fetchHtml(source.url);
+    for (const candidate of parseSource(html, source)) {
+      bySourceUrl.set(candidate.sourceUrl, candidate);
+    }
+  }
+
+  return Array.from(bySourceUrl.values());
 }
 ```
 
-- [ ] **Step 4: Rodar o teste, confirmar que passa**
+- [ ] **Step 5: Rodar o teste, confirmar que passa**
 
-Run: `npm test -- runScrapeThemes.test.ts`
+Run: `npm test -- scrapeThemes.test.ts`
 
-Expected: PASS (4 testes).
+Expected: PASS (4 testes), sem acesso à rede.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/lib/scraping/runScrapeThemes.ts src/lib/scraping/runScrapeThemes.test.ts
-git commit -m "feat: add validated Python scraper wrapper"
+git add package.json package-lock.json src/lib/scraping/scrapeThemes.ts src/lib/scraping/scrapeThemes.test.ts
+git commit -m "feat: add TypeScript theme scraper (fetch + cheerio)"
 ```
 
 ---
 
-### Task 4: Seleção e reescrita editorial de temas
+### Task 2: Seleção e reescrita editorial de temas
 
 **Files:**
 - Create: `src/lib/ai/suggestThemes.ts`
 - Test: `src/lib/ai/suggestThemes.test.ts`
 
 **Interfaces:**
-- Consumes: `ScrapedCandidate`; `resolveProvider('THEME_SUGGESTION')`; `completeWithNvidia(prompt: string, model?: string): Promise<string>`; `completeWithClaude(prompt: string, model?: string): Promise<string>`; `loadDesignSystem(): string`
+- Consumes: `ScrapedCandidate` (Task 1); `resolveProvider('THEME_SUGGESTION')`; `completeWithNvidia(prompt: string, model?: string): Promise<string>`; `completeWithClaude(prompt: string, model?: string): Promise<string>`; `loadDesignSystem(): string`
 - Produces: `interface ThemeSuggestion { sourceUrl: string; headlineSuggestion: string; summary: string }`; `suggestThemes(candidates: ScrapedCandidate[]): Promise<ThemeSuggestion[]>`
 
 - [ ] **Step 1: Escrever o teste que falha**
@@ -689,7 +431,7 @@ Expected: FAIL com `Cannot find module './suggestThemes'`.
 
 ```ts
 import { z } from 'zod';
-import type { ScrapedCandidate } from '@/lib/scraping/runScrapeThemes';
+import type { ScrapedCandidate } from '@/lib/scraping/scrapeThemes';
 import { completeWithClaude } from './claudeClient';
 import { loadDesignSystem } from './designSystem';
 import { completeWithNvidia } from './nvidiaClient';
@@ -770,7 +512,7 @@ git commit -m "feat: add editorial theme suggestions"
 
 ---
 
-### Task 5: Análise tolerante a falha de imagem de referência
+### Task 3: Análise tolerante a falha de imagem de referência
 
 **Files:**
 - Create: `src/lib/ai/analyzeReferenceImage.ts`
@@ -894,7 +636,7 @@ git commit -m "feat: add resilient reference image analysis"
 
 ---
 
-### Task 6: Unicidade de URL e rota autenticada de descoberta
+### Task 4: Unicidade de URL e rota autenticada de descoberta
 
 **Files:**
 - Modify: `prisma/schema.prisma`
@@ -903,7 +645,7 @@ git commit -m "feat: add resilient reference image analysis"
 - Test: `src/app/api/pipeline/discover/route.test.ts`
 
 **Interfaces:**
-- Consumes: `runScrapeThemes(): Promise<ScrapedCandidate[]>`; `suggestThemes(candidates: ScrapedCandidate[]): Promise<ThemeSuggestion[]>`; `prisma.theme.upsert`; `DISCOVERY_API_TOKEN`
+- Consumes: `scrapeThemes(): Promise<ScrapedCandidate[]>`; `suggestThemes(candidates: ScrapedCandidate[]): Promise<ThemeSuggestion[]>`; `prisma.theme.upsert`; `DISCOVERY_API_TOKEN`
 - Produces: `POST(request: Request): Promise<Response>`; índice único `Theme_sourceUrl_key`
 
 - [ ] **Step 1: Escrever o teste que falha**
@@ -913,13 +655,13 @@ git commit -m "feat: add resilient reference image analysis"
 ```ts
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-vi.mock('@/lib/scraping/runScrapeThemes', () => ({ runScrapeThemes: vi.fn() }));
+vi.mock('@/lib/scraping/scrapeThemes', () => ({ scrapeThemes: vi.fn() }));
 vi.mock('@/lib/ai/suggestThemes', () => ({ suggestThemes: vi.fn() }));
 vi.mock('@/lib/prisma', () => ({ prisma: { theme: { upsert: vi.fn() } } }));
 
 import { suggestThemes } from '@/lib/ai/suggestThemes';
 import { prisma } from '@/lib/prisma';
-import { runScrapeThemes } from '@/lib/scraping/runScrapeThemes';
+import { scrapeThemes } from '@/lib/scraping/scrapeThemes';
 import { POST } from './route';
 
 function request(token = 'test-token'): Request {
@@ -932,7 +674,7 @@ function request(token = 'test-token'): Request {
 describe('POST /api/pipeline/discover', () => {
   beforeEach(() => {
     vi.stubEnv('DISCOVERY_API_TOKEN', 'test-token');
-    vi.mocked(runScrapeThemes).mockReset();
+    vi.mocked(scrapeThemes).mockReset();
     vi.mocked(suggestThemes).mockReset();
     vi.mocked(prisma.theme.upsert).mockReset();
   });
@@ -944,7 +686,7 @@ describe('POST /api/pipeline/discover', () => {
     // Assert
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ success: false, error: 'Unauthorized' });
-    expect(runScrapeThemes).not.toHaveBeenCalled();
+    expect(scrapeThemes).not.toHaveBeenCalled();
   });
 
   test('returns 401 when the authorization header is absent', async () => {
@@ -958,7 +700,7 @@ describe('POST /api/pipeline/discover', () => {
 
     // Assert
     expect(response.status).toBe(401);
-    expect(runScrapeThemes).not.toHaveBeenCalled();
+    expect(scrapeThemes).not.toHaveBeenCalled();
   });
 
   test('returns 401 when the server token is not configured', async () => {
@@ -970,7 +712,7 @@ describe('POST /api/pipeline/discover', () => {
 
     // Assert
     expect(response.status).toBe(401);
-    expect(runScrapeThemes).not.toHaveBeenCalled();
+    expect(scrapeThemes).not.toHaveBeenCalled();
   });
 
   test('scrapes, suggests and upserts pending themes without resetting status', async () => {
@@ -986,7 +728,7 @@ describe('POST /api/pipeline/discover', () => {
       headlineSuggestion: 'Editorial headline',
       summary: 'Editorial summary',
     }];
-    vi.mocked(runScrapeThemes).mockResolvedValue(candidates);
+    vi.mocked(scrapeThemes).mockResolvedValue(candidates);
     vi.mocked(suggestThemes).mockResolvedValue(suggestions);
     vi.mocked(prisma.theme.upsert).mockResolvedValue({ id: 'theme-1' } as never);
 
@@ -1013,7 +755,7 @@ describe('POST /api/pipeline/discover', () => {
 
   test('returns 500 when discovery fails', async () => {
     // Arrange
-    vi.mocked(runScrapeThemes).mockRejectedValue(new Error('scraper unavailable'));
+    vi.mocked(scrapeThemes).mockRejectedValue(new Error('scraper unavailable'));
 
     // Act
     const response = await POST(request());
@@ -1086,7 +828,7 @@ A migration remapeia eventuais `Post.themeId` ao tema mais antigo de cada URL an
 import { timingSafeEqual } from 'node:crypto';
 import { suggestThemes } from '@/lib/ai/suggestThemes';
 import { prisma } from '@/lib/prisma';
-import { runScrapeThemes } from '@/lib/scraping/runScrapeThemes';
+import { scrapeThemes } from '@/lib/scraping/scrapeThemes';
 
 function authorized(request: Request): boolean {
   const expected = process.env.DISCOVERY_API_TOKEN;
@@ -1106,7 +848,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
   try {
-    const candidates = await runScrapeThemes();
+    const candidates = await scrapeThemes();
     const suggestions = await suggestThemes(candidates);
     await Promise.all(suggestions.map((suggestion) => prisma.theme.upsert({
       where: { sourceUrl: suggestion.sourceUrl },
@@ -1141,15 +883,14 @@ git commit -m "feat: add authenticated theme discovery endpoint"
 
 ---
 
-### Task 7: Agendamento diário e imagem de produção
+### Task 5: Agendamento diário via GitHub Actions
 
 **Files:**
 - Create: `.github/workflows/discover-themes.yml`
-- Create: `Dockerfile`
 
 **Interfaces:**
-- Consumes: secrets `DISCOVERY_API_TOKEN` e `APP_URL`; rota `POST /api/pipeline/discover`; `requirements.txt`; scripts `npm run build` e `npm start`
-- Produces: workflow diário `discover-themes`; imagem OCI que contém Node.js 22, Python 3, Scrapling e browsers
+- Consumes: secrets `DISCOVERY_API_TOKEN` e `APP_URL`; rota `POST /api/pipeline/discover` (hospedada no Vercel)
+- Produces: workflow diário `discover-themes`
 
 - [ ] **Step 1: Escrever a configuração inicial que ainda não foi validada**
 
@@ -1183,75 +924,42 @@ jobs:
             "${APP_URL%/}/api/pipeline/discover"
 ```
 
-`Dockerfile`:
-
-```dockerfile
-FROM node:22-slim AS dependencies
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
-
-FROM dependencies AS builder
-COPY . .
-RUN npm run build
-
-FROM node:22-slim AS runner
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV PATH="/opt/scrapling-venv/bin:${PATH}"
-WORKDIR /app
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 python3-pip python3-venv \
-    && rm -rf /var/lib/apt/lists/*
-COPY requirements.txt ./
-RUN python3 -m venv /opt/scrapling-venv \
-    && pip install --no-cache-dir -r requirements.txt \
-    && scrapling install --force
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/package-lock.json ./package-lock.json
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/scripts ./scripts
-EXPOSE 3000
-CMD ["npm", "start"]
-```
-
-O requisito `scrapling[fetchers]` instala os fetchers; `scrapling install --force` baixa os browsers, dependências de sistema e componentes de fingerprint exigidos pelo projeto, conforme a documentação oficial do Scrapling. O virtualenv em `/opt/scrapling-venv` evita modificar o Python gerenciado pelo Debian e fica no `PATH` do processo final.
+`APP_URL` aponta para o domínio do deploy de produção no Vercel (ex.: `https://carousel-desk.vercel.app`); não há imagem ou runtime adicional a publicar — o deploy do app é feito pelo próprio Vercel a partir do repositório Git.
 
 - [ ] **Step 2: Rodar as validações e observar qualquer falha real**
 
-Run: `npx prettier --check .github/workflows/discover-themes.yml && docker build --target runner -t carousel-desk:discover .`
+Run: `npx prettier --check .github/workflows/discover-themes.yml && npm test && npm run build`
 
-Expected: antes de corrigir qualquer erro de sintaxe, path ou dependência revelado pelo ambiente, o comando correspondente falha com mensagem específica; não avançar enquanto houver falha.
+Expected: antes de corrigir qualquer erro de sintaxe ou falha de teste/build revelado pelo ambiente, o comando correspondente falha com mensagem específica; não avançar enquanto houver falha.
 
 - [ ] **Step 3: Implementar os ajustes exigidos pela validação**
 
-Manter como conteúdo final os dois arquivos completos do Step 1. Não substituir `scrapling install --force` por `playwright install`: o instalador do Scrapling também prepara Patchright/fingerprints e suas dependências. Não inserir valores de secrets no YAML ou na imagem.
+Manter como conteúdo final o arquivo completo do Step 1. Não inserir valores de secrets no YAML.
 
 - [ ] **Step 4: Rodar o teste, confirmar que passa**
 
-Run: `npx prettier --check .github/workflows/discover-themes.yml && docker build --target runner -t carousel-desk:discover . && docker run --rm carousel-desk:discover python3 -c "from scrapling.fetchers import StealthyFetcher; print('scrapling-ok')"`
+Run: `npx prettier --check .github/workflows/discover-themes.yml && npm test && npm run build`
 
-Expected: Prettier encerra com código 0; a imagem é construída; o container imprime somente `scrapling-ok` e encerra com código 0. Depois, run: `npm test && npm run build`; expected: toda a suíte passa e o build Next.js conclui.
+Expected: Prettier encerra com código 0; toda a suíte de testes passa; o build Next.js conclui.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add .github/workflows/discover-themes.yml Dockerfile
-git commit -m "ci: schedule theme discovery and package scraper"
+git add .github/workflows/discover-themes.yml
+git commit -m "ci: schedule theme discovery"
 ```
 
 ## Autorrevisão final
 
-- [ ] Confirmar que o scraper cobre três fontes configuráveis, título, resumo, URL e no máximo duas imagens, e que pytest usa somente fixture local.
-- [ ] Confirmar que stdout recebe um único JSON e que o wrapper rejeita exit error, stderr não vazia, JSON inválido e schema inválido.
+- [ ] Confirmar que o scraper cobre três fontes configuráveis, título, resumo, URL e no máximo duas imagens, e que os testes usam somente HTML de fixture embutido, sem acesso à rede.
+- [ ] Confirmar que `scrapeThemes` deduplica candidatos por `sourceUrl` entre fontes.
 - [ ] Confirmar que `suggestThemes` usa o sistema de marca, escolhe entre três e cinco itens e impede URLs inventadas.
 - [ ] Confirmar que `analyzeReferenceImage` seleciona o provedor de visão e converte qualquer falha em `null`.
 - [ ] Confirmar que a migration cria unicidade em `Theme.sourceUrl` e que o upsert não redefine status de temas existentes.
 - [ ] Confirmar autenticação fail-closed, comparação em tempo constante e ausência de secrets hardcoded.
 - [ ] Confirmar workflow diário, `workflow_dispatch`, permissões mínimas, timeout e `curl --fail-with-body`.
-- [ ] Confirmar no Dockerfile `node:22-slim`, Python 3, `scrapling[fetchers]`, `scrapling install --force`, build multi-stage e `npm start`.
+- [ ] Confirmar que nenhum arquivo do plano referencia Python, Scrapling ou Docker.
 - [ ] Fazer um scan por marcadores de pendência, frases que deleguem implementação e trechos elididos; expected: nenhuma ocorrência fora desta instrução de revisão.
 - [ ] Rodar `rg -n "\bany\b|console\.log" docs/superpowers/plans/2026-09-02-scraping-temas.md`; expected: nenhuma ocorrência em código TypeScript.
 - [ ] Conferir consistência ponta a ponta de `ScrapedCandidate`, `ThemeSuggestion`, `sourceUrl`, `headlineSuggestion`, `summary` e `referenceImageUrls`.
-- [ ] Rodar `python3 -m pytest tests/python -q`, `npm test`, `npm run build` e validar cobertura mínima de 80% antes do merge.
+- [ ] Rodar `npm test`, `npm run build` e validar cobertura mínima de 80% antes do merge.
