@@ -4,13 +4,13 @@ import { listThemesByStatus, listPendingThemes } from './themes';
 
 describe('themes data layer', () => {
   afterEach(async () => {
-    await prisma.theme.deleteMany({ where: { sourceUrl: 'https://example.com/themes-data-test' } });
+    await prisma.theme.deleteMany({ where: { sourceUrl: { startsWith: 'https://example.com/themes-data-test' } } });
   });
 
   test('listThemesByStatus returns only themes with the given status', async () => {
     await prisma.theme.create({
       data: {
-        sourceUrl: 'https://example.com/themes-data-test',
+        sourceUrl: 'https://example.com/themes-data-test-pending',
         summary: 'resumo pendente',
         headlineSuggestion: 'Tema pendente',
         status: 'pending',
@@ -18,7 +18,7 @@ describe('themes data layer', () => {
     });
     await prisma.theme.create({
       data: {
-        sourceUrl: 'https://example.com/themes-data-test',
+        sourceUrl: 'https://example.com/themes-data-test-approved',
         summary: 'resumo aprovado',
         headlineSuggestion: 'Tema aprovado',
         status: 'approved',
@@ -34,7 +34,7 @@ describe('themes data layer', () => {
   test('listPendingThemes delegates to listThemesByStatus with pending', async () => {
     await prisma.theme.create({
       data: {
-        sourceUrl: 'https://example.com/themes-data-test',
+        sourceUrl: 'https://example.com/themes-data-test-pending-2',
         summary: 'resumo',
         headlineSuggestion: 'Tema pendente 2',
         status: 'pending',
