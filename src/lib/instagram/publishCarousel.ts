@@ -1,4 +1,4 @@
-const GRAPH_API_BASE_URL = 'https://graph.facebook.com/v21.0';
+const GRAPH_API_BASE_URL = 'https://graph.instagram.com/v21.0';
 
 interface GraphIdResponse {
   id: string;
