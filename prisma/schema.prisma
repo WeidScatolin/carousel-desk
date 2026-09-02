@@ -19,6 +19,7 @@ model Theme {
   summary            String
   headlineSuggestion String
   status             ThemeStatus @default(pending)
+  rejectionReason    String?
   createdAt          DateTime    @default(now())
   posts              Post[]
 }
@@ -41,6 +42,7 @@ model Post {
   publishedAt     DateTime?
   instagramPostId String?
   errorMessage    String?
+  rejectionReason String?
   createdAt       DateTime   @default(now())
   slides          Slide[]
 }
