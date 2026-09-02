@@ -8,7 +8,7 @@ import { verifyCredentials } from './credentials';
 const env = {
   ADMIN_USERNAME: 'admin',
   ADMIN_PASSWORD_HASH: 'hashed-password',
-} as NodeJS.ProcessEnv;
+} as unknown as NodeJS.ProcessEnv;
 
 describe('verifyCredentials', () => {
   beforeEach(() => {
@@ -40,7 +40,7 @@ describe('verifyCredentials', () => {
   });
 
   test('throws when ADMIN_USERNAME or ADMIN_PASSWORD_HASH is not set', async () => {
-    await expect(verifyCredentials('admin', 'x', {} as NodeJS.ProcessEnv)).rejects.toThrow(
+    await expect(verifyCredentials('admin', 'x', {} as unknown as NodeJS.ProcessEnv)).rejects.toThrow(
       'ADMIN_USERNAME or ADMIN_PASSWORD_HASH is not set'
     );
   });

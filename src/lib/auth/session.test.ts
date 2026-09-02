@@ -6,7 +6,7 @@ describe('getSessionOptions', () => {
     const options = getSessionOptions({
       SESSION_SECRET: 'a'.repeat(32),
       NODE_ENV: 'development',
-    } as NodeJS.ProcessEnv);
+    } as unknown as NodeJS.ProcessEnv);
 
     expect(options.cookieName).toBe(SESSION_COOKIE_NAME);
     expect(options.password).toBe('a'.repeat(32));
@@ -17,12 +17,12 @@ describe('getSessionOptions', () => {
     const options = getSessionOptions({
       SESSION_SECRET: 'a'.repeat(32),
       NODE_ENV: 'production',
-    } as NodeJS.ProcessEnv);
+    } as unknown as NodeJS.ProcessEnv);
 
     expect(options.cookieOptions?.secure).toBe(true);
   });
 
   test('throws when SESSION_SECRET is not set', () => {
-    expect(() => getSessionOptions({} as NodeJS.ProcessEnv)).toThrow('SESSION_SECRET is not set');
+    expect(() => getSessionOptions({} as unknown as NodeJS.ProcessEnv)).toThrow('SESSION_SECRET is not set');
   });
 });
