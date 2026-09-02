@@ -40,4 +40,14 @@ describe('generateSlideHtml', () => {
     expect(html).toContain('&lt;script&gt;');
     expect(html).toContain('&lt;b&gt;teste&lt;/b&gt;');
   });
+
+  test('keeps the headline style attribute well-formed (no embedded double quotes)', () => {
+    const html = generateSlideHtml({ template: 'cover', headline: 'IA muda o jogo', body: 'Resumo' });
+
+    const headingTag = html.match(/<h1[^>]*>/)?.[0] ?? '';
+    const styleValue = headingTag.match(/style="([^]*?)"/)?.[1] ?? '';
+
+    expect(styleValue).not.toContain('"');
+    expect(styleValue).toContain('font-family');
+  });
 });

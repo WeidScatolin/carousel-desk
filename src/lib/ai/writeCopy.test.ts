@@ -57,4 +57,23 @@ describe('writeCopy', () => {
       writeCopy({ headlineSuggestion: 'IA generativa', summary: 'resumo' })
     ).rejects.toThrow('slide at index 0 has invalid template "invalid"');
   });
+
+  test('strips HTML tags the provider embeds in headline or body', async () => {
+    process.env.PROVIDER_COPYWRITING = 'claude';
+    vi.mocked(completeWithClaude).mockResolvedValue(
+      JSON.stringify([
+        {
+          template: 'cover',
+          headline: 'A nova rota de <span style="color:#FF3B0A">R$100 mi</span> para proteger',
+          body: '<p>Corpo com <b>markup</b></p>',
+        },
+      ])
+    );
+
+    const result = await writeCopy({ headlineSuggestion: 'IA generativa', summary: 'resumo' });
+
+    expect(result).toEqual([
+      { template: 'cover', headline: 'A nova rota de R$100 mi para proteger', body: 'Corpo com markup' },
+    ]);
+  });
 });

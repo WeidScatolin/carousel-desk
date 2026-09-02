@@ -7,7 +7,7 @@ const PALETTE = {
   purpleBlack: '#11101D',
 } as const;
 
-const HEADLINE_FONT_STACK = '"Arial Narrow", Arial, sans-serif';
+const HEADLINE_FONT_STACK = "'Arial Narrow', Arial, sans-serif";
 const BODY_FONT_STACK = 'Arial, Helvetica, sans-serif';
 
 function escapeHtml(text: string): string {

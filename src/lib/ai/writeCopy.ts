@@ -24,8 +24,15 @@ function buildPrompt(theme: ThemeInput): string {
     'Escreva a copy de um carrossel de 3 slides seguindo os templates',
     '"cover", "evidence" e "framework" definidos acima. Responda em JSON,',
     'como uma lista de objetos com os campos "template", "headline" e',
-    '"body". Não inclua nada além do JSON na resposta.',
+    '"body". "headline" e "body" devem ser texto puro, sem nenhuma tag',
+    'HTML, markdown ou marcação de qualquer tipo — o destaque visual do',
+    'headline é aplicado automaticamente pelo código, não pelo texto.',
+    'Não inclua nada além do JSON na resposta.',
   ].join('\n');
+}
+
+function stripHtmlTags(text: string): string {
+  return text.replace(/<[^>]*>/g, '');
 }
 
 function parseSlide(item: unknown, index: number): SlideCopy {
@@ -45,7 +52,11 @@ function parseSlide(item: unknown, index: number): SlideCopy {
     throw new Error(`writeCopy: slide at index ${index} has invalid template "${String(template)}"`);
   }
 
-  return { template, headline: String(headline), body: String(body) };
+  return {
+    template,
+    headline: stripHtmlTags(String(headline)),
+    body: stripHtmlTags(String(body)),
+  };
 }
 
 export async function writeCopy(theme: ThemeInput): Promise<SlideCopy[]> {
