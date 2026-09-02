@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ScrapedCandidate } from '@/lib/scraping/runScrapeThemes';
+import type { ScrapedCandidate } from '@/lib/scraping/scrapeThemes';
 import { completeWithClaude } from './claudeClient';
 import { loadDesignSystem } from './designSystem';
 import { completeWithNvidia } from './nvidiaClient';

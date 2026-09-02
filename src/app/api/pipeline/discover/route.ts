@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { suggestThemes } from '@/lib/ai/suggestThemes';
 import { prisma } from '@/lib/prisma';
-import { runScrapeThemes } from '@/lib/scraping/runScrapeThemes';
+import { scrapeThemes } from '@/lib/scraping/scrapeThemes';
 
 function authorized(request: Request): boolean {
   const expected = process.env.DISCOVERY_API_TOKEN;
@@ -21,7 +21,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
   try {
-    const candidates = await runScrapeThemes();
+    const candidates = await scrapeThemes();
     const suggestions = await suggestThemes(candidates);
     await Promise.all(suggestions.map((suggestion) => prisma.theme.upsert({
       where: { sourceUrl: suggestion.sourceUrl },

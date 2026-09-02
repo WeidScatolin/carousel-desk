@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-vi.mock('@/lib/scraping/runScrapeThemes', () => ({ runScrapeThemes: vi.fn() }));
+vi.mock('@/lib/scraping/scrapeThemes', () => ({ scrapeThemes: vi.fn() }));
 vi.mock('@/lib/ai/suggestThemes', () => ({ suggestThemes: vi.fn() }));
 vi.mock('@/lib/prisma', () => ({ prisma: { theme: { upsert: vi.fn() } } }));
 
 import { suggestThemes } from '@/lib/ai/suggestThemes';
 import { prisma } from '@/lib/prisma';
-import { runScrapeThemes } from '@/lib/scraping/runScrapeThemes';
+import { scrapeThemes } from '@/lib/scraping/scrapeThemes';
 import { POST } from './route';
 
 function request(token = 'test-token'): Request {
@@ -19,7 +19,7 @@ function request(token = 'test-token'): Request {
 describe('POST /api/pipeline/discover', () => {
   beforeEach(() => {
     vi.stubEnv('DISCOVERY_API_TOKEN', 'test-token');
-    vi.mocked(runScrapeThemes).mockReset();
+    vi.mocked(scrapeThemes).mockReset();
     vi.mocked(suggestThemes).mockReset();
     vi.mocked(prisma.theme.upsert).mockReset();
   });
@@ -31,7 +31,7 @@ describe('POST /api/pipeline/discover', () => {
     // Assert
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ success: false, error: 'Unauthorized' });
-    expect(runScrapeThemes).not.toHaveBeenCalled();
+    expect(scrapeThemes).not.toHaveBeenCalled();
   });
 
   test('returns 401 when the authorization header is absent', async () => {
@@ -45,7 +45,7 @@ describe('POST /api/pipeline/discover', () => {
 
     // Assert
     expect(response.status).toBe(401);
-    expect(runScrapeThemes).not.toHaveBeenCalled();
+    expect(scrapeThemes).not.toHaveBeenCalled();
   });
 
   test('returns 401 when the server token is not configured', async () => {
@@ -57,7 +57,7 @@ describe('POST /api/pipeline/discover', () => {
 
     // Assert
     expect(response.status).toBe(401);
-    expect(runScrapeThemes).not.toHaveBeenCalled();
+    expect(scrapeThemes).not.toHaveBeenCalled();
   });
 
   test('scrapes, suggests and upserts pending themes without resetting status', async () => {
@@ -73,7 +73,7 @@ describe('POST /api/pipeline/discover', () => {
       headlineSuggestion: 'Editorial headline',
       summary: 'Editorial summary',
     }];
-    vi.mocked(runScrapeThemes).mockResolvedValue(candidates);
+    vi.mocked(scrapeThemes).mockResolvedValue(candidates);
     vi.mocked(suggestThemes).mockResolvedValue(suggestions);
     vi.mocked(prisma.theme.upsert).mockResolvedValue({ id: 'theme-1' } as never);
 
@@ -100,7 +100,7 @@ describe('POST /api/pipeline/discover', () => {
 
   test('returns 500 when discovery fails', async () => {
     // Arrange
-    vi.mocked(runScrapeThemes).mockRejectedValue(new Error('scraper unavailable'));
+    vi.mocked(scrapeThemes).mockRejectedValue(new Error('scraper unavailable'));
 
     // Act
     const response = await POST(request());
