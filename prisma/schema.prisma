@@ -15,7 +15,7 @@ enum ThemeStatus {
 
 model Theme {
   id                 String      @id @default(uuid())
-  sourceUrl          String
+  sourceUrl          String      @unique
   summary            String
   headlineSuggestion String
   status             ThemeStatus @default(pending)
