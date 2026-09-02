@@ -48,6 +48,11 @@ Instagram.
 - **Sem fila/retry automático**: mesmo princípio do ad-spy — se uma execução
   falhar (scraping, geração, publicação), fica marcada com erro visível no
   dashboard; o próximo disparo do cron tenta de novo naturalmente.
+- **Limpeza do Cloudinary pós-publicação**: assim que um post é publicado
+  com sucesso no Instagram, as imagens dos slides são apagadas do
+  Cloudinary (o Instagram já guarda a cópia definitiva) para não consumir
+  o free tier de storage ao longo do tempo. A linha do post/slide continua
+  no histórico do kanban (coluna "Publicado"), só sem a imagem armazenada.
 
 ## Identidade visual do conteúdo (brief do usuário, adaptado)
 
@@ -97,7 +102,8 @@ Render (Web Service free — Next.js, App Router, TypeScript)
    │                             Cloudinary, grava Post+Slides (status:
    │                             pending_approval)
    ├─ /api/pipeline/publish    → publica carrossel aprovado+agendado via
-   │                             Instagram Graph API
+   │                             Instagram Graph API; após sucesso, apaga as
+   │                             imagens dos slides no Cloudinary
    └─ Playwright roda dentro das rotas de API (por isso não pode ser
       serverless/Vercel — precisa de processo persistente)
 
@@ -146,7 +152,8 @@ aprovação** · **Agendado** · **Publicado** · **Rejeitado** (com motivo).
   `publishedAt`, `instagramPostId`, `errorMessage`
 - **Slide**: `id`, `postId`, `order`, `template`
   (`cover` | `evidence` | `framework`), `htmlContent`, `imageUrl`
-  (Cloudinary), `imageSource` (`stock` | `scraped`), `sourceImageUrl`
+  (Cloudinary, nulo após limpeza pós-publicação), `cloudinaryPublicId`,
+  `imageSource` (`stock` | `scraped`), `sourceImageUrl`, `imageDeletedAt`
 
 ## Abstração de provedor de IA
 
