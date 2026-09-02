@@ -1,0 +1,25 @@
+name: Discover themes
+
+on:
+  schedule:
+    - cron: "17 09 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger theme discovery
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          DISCOVERY_API_TOKEN: ${{ secrets.DISCOVERY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${DISCOVERY_API_TOKEN}" \
+            "${APP_URL%/}/api/pipeline/discover"
