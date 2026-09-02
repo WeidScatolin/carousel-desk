@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ThemeStatus {
+  pending
+  approved
+  rejected
+}
+
+model Theme {
+  id                 String      @id @default(uuid())
+  sourceUrl          String
+  summary            String
+  headlineSuggestion String
+  status             ThemeStatus @default(pending)
+  createdAt          DateTime    @default(now())
+  posts              Post[]
+}
+
+enum PostStatus {
+  generating
+  pending_approval
+  scheduled
+  published
+  rejected
+  error
+}
+
+model Post {
+  id              String     @id @default(uuid())
+  themeId         String
+  theme           Theme      @relation(fields: [themeId], references: [id])
+  status          PostStatus @default(generating)
+  scheduledAt     DateTime?
+  publishedAt     DateTime?
+  instagramPostId String?
+  errorMessage    String?
+  createdAt       DateTime   @default(now())
+  slides          Slide[]
+}
+
+enum SlideTemplate {
+  cover
+  evidence
+  framework
+}
+
+enum ImageSource {
+  stock
+  scraped
+}
+
+model Slide {
+  id                 String        @id @default(uuid())
+  postId             String
+  post               Post          @relation(fields: [postId], references: [id])
+  order              Int
+  template           SlideTemplate
+  htmlContent        String
+  imageUrl           String?
+  cloudinaryPublicId String?
+  imageSource        ImageSource   @default(stock)
+  sourceImageUrl     String?
+  imageDeletedAt     DateTime?
+}
