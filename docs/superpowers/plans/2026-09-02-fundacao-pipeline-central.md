@@ -30,8 +30,10 @@ Playwright, Cloudinary SDK.
   mas a função de render já deve ser escrita assumindo isso).
 - Provedor de IA por tarefa é configurável via variáveis de ambiente
   (`PROVIDER_THEME_SUGGESTION`, `PROVIDER_IMAGE_ANALYSIS`,
-  `PROVIDER_COPYWRITING`, `PROVIDER_HTML_GENERATION`), valores `"nvidia"`
-  ou `"claude"` — nunca hardcoded.
+  `PROVIDER_COPYWRITING`), valores `"nvidia"` ou `"claude"` — nunca
+  hardcoded. A geração de HTML do slide NÃO usa IA — é determinística
+  (ver Task 8) — nenhum provedor pode fazer o visual fugir do
+  `DESIGN.md`.
 - Render do slide deve usar viewport exato 1080x1350 com
   `deviceScaleFactor` 2x — não é "print de tela", é renderização
   controlada em alta resolução.
@@ -243,8 +245,7 @@ CLOUDINARY_API_KEY=""
 CLOUDINARY_API_SECRET=""
 PROVIDER_THEME_SUGGESTION="nvidia"
 PROVIDER_IMAGE_ANALYSIS="nvidia"
-PROVIDER_COPYWRITING="claude"
-PROVIDER_HTML_GENERATION="claude"
+PROVIDER_COPYWRITING="nvidia"
 ```
 
 - [ ] **Step 12: Instalar dependências e o navegador do Playwright**
@@ -446,8 +447,7 @@ git commit -m "feat: add Prisma schema and Neon connection"
 
 **Interfaces:**
 - Consumes: variáveis de ambiente `PROVIDER_THEME_SUGGESTION`,
-  `PROVIDER_IMAGE_ANALYSIS`, `PROVIDER_COPYWRITING`,
-  `PROVIDER_HTML_GENERATION`
+  `PROVIDER_IMAGE_ANALYSIS`, `PROVIDER_COPYWRITING`
 - Produces: `type ProviderName = 'nvidia' | 'claude'`; `type ProviderTask`;
   `function resolveProvider(task: ProviderTask, env?: NodeJS.ProcessEnv): ProviderName`
 
@@ -469,8 +469,8 @@ describe('resolveProvider', () => {
   });
 
   test('returns claude when the env var is set to claude', () => {
-    const result = resolveProvider('HTML_GENERATION', {
-      PROVIDER_HTML_GENERATION: 'claude',
+    const result = resolveProvider('IMAGE_ANALYSIS', {
+      PROVIDER_IMAGE_ANALYSIS: 'claude',
     } as NodeJS.ProcessEnv);
 
     expect(result).toBe('claude');
@@ -500,17 +500,12 @@ Expected: FAIL com "Cannot find module './types'" ou similar
 ```ts
 export type ProviderName = 'nvidia' | 'claude';
 
-export type ProviderTask =
-  | 'THEME_SUGGESTION'
-  | 'IMAGE_ANALYSIS'
-  | 'COPYWRITING'
-  | 'HTML_GENERATION';
+export type ProviderTask = 'THEME_SUGGESTION' | 'IMAGE_ANALYSIS' | 'COPYWRITING';
 
 const ENV_VAR_BY_TASK: Record<ProviderTask, string> = {
   THEME_SUGGESTION: 'PROVIDER_THEME_SUGGESTION',
   IMAGE_ANALYSIS: 'PROVIDER_IMAGE_ANALYSIS',
   COPYWRITING: 'PROVIDER_COPYWRITING',
-  HTML_GENERATION: 'PROVIDER_HTML_GENERATION',
 };
 
 export function resolveProvider(
@@ -1047,55 +1042,68 @@ git commit -m "feat: add slide copywriting pipeline step"
 
 ---
 
-### Task 8: Geração de HTML do slide (`generateSlideHtml`)
+### Task 8: Templates determinísticos de slide (`generateSlideHtml`)
+
+Esta etapa NÃO usa IA — é uma trava proposital: o visual do slide (cores,
+tipografia, layout) vem sempre do `DESIGN.md`, embutido diretamente no
+código, independente de qual provedor (ou nenhum) gerou o texto. A IA só
+escreve `headline`/`body` (Task 7); esta task só posiciona esse texto
+dentro de um dos três templates fixos.
 
 **Files:**
 - Create: `src/lib/ai/generateSlideHtml.ts`
 - Test: `src/lib/ai/generateSlideHtml.test.ts`
 
 **Interfaces:**
-- Consumes: `resolveProvider` (Task 3), `completeWithNvidia` (Task 4),
-  `completeWithClaude` (Task 5), `loadDesignSystem` (Task 6), `SlideCopy`
-  (Task 7)
-- Produces: `function generateSlideHtml(slide: SlideCopy): Promise<string>`
+- Consumes: `SlideCopy` (Task 7)
+- Produces: `function generateSlideHtml(slide: SlideCopy): string`
 
 - [ ] **Step 1: Escrever o teste**
 
 `src/lib/ai/generateSlideHtml.test.ts`:
 
 ```ts
-import { describe, test, expect, vi, beforeEach } from 'vitest';
-
-vi.mock('./nvidiaClient', () => ({ completeWithNvidia: vi.fn() }));
-vi.mock('./claudeClient', () => ({ completeWithClaude: vi.fn() }));
-
-import { completeWithNvidia } from './nvidiaClient';
-import { completeWithClaude } from './claudeClient';
+import { describe, test, expect } from 'vitest';
 import { generateSlideHtml } from './generateSlideHtml';
 
 describe('generateSlideHtml', () => {
-  beforeEach(() => {
-    vi.mocked(completeWithNvidia).mockReset();
-    vi.mocked(completeWithClaude).mockReset();
+  test('renders a cover slide with the dark background and an accented headline', () => {
+    const html = generateSlideHtml({ template: 'cover', headline: 'IA muda o jogo', body: 'Resumo' });
+
+    expect(html).toContain('#0A0A0A');
+    expect(html).toContain('IA muda o');
+    expect(html).toContain('#FF3B0A');
   });
 
-  test('returns the HTML produced by the configured provider', async () => {
-    process.env.PROVIDER_HTML_GENERATION = 'claude';
-    vi.mocked(completeWithClaude).mockResolvedValue('<html><body>slide</body></html>');
+  test('renders an evidence slide with the cream background', () => {
+    const html = generateSlideHtml({ template: 'evidence', headline: 'Os dados mostram X', body: 'Resumo' });
 
-    const html = await generateSlideHtml({ template: 'cover', headline: 'Título', body: 'Corpo' });
-
-    expect(html).toBe('<html><body>slide</body></html>');
-    expect(completeWithClaude).toHaveBeenCalledTimes(1);
+    expect(html).toContain('#F2F0E8');
+    expect(html).toContain('Resumo');
   });
 
-  test('throws when provider response does not look like HTML', async () => {
-    process.env.PROVIDER_HTML_GENERATION = 'nvidia';
-    vi.mocked(completeWithNvidia).mockResolvedValue('just plain text');
+  test('renders a framework slide as a checklist when the body has multiple lines', () => {
+    const html = generateSlideHtml({
+      template: 'framework',
+      headline: 'Modelo 01',
+      body: 'Primeiro passo\nSegundo passo',
+    });
 
-    await expect(
-      generateSlideHtml({ template: 'evidence', headline: 'Título', body: 'Corpo' })
-    ).rejects.toThrow('generateSlideHtml: provider response does not look like HTML');
+    expect(html).toContain('<ul');
+    expect(html).toContain('Primeiro passo');
+    expect(html).toContain('Segundo passo');
+  });
+
+  test('escapes HTML special characters in the headline and body', () => {
+    const html = generateSlideHtml({
+      template: 'cover',
+      headline: 'Menos <script> mais resultado',
+      body: '<b>teste</b>',
+    });
+
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).toContain('&lt;b&gt;teste&lt;/b&gt;');
   });
 });
 ```
@@ -1108,48 +1116,105 @@ Expected: FAIL com "Cannot find module './generateSlideHtml'"
 - [ ] **Step 3: Implementar `src/lib/ai/generateSlideHtml.ts`**
 
 ```ts
-import { resolveProvider } from './types';
-import { completeWithNvidia } from './nvidiaClient';
-import { completeWithClaude } from './claudeClient';
-import { loadDesignSystem } from './designSystem';
 import type { SlideCopy } from './writeCopy';
 
-function buildPrompt(slide: SlideCopy): string {
-  return [
-    loadDesignSystem(),
-    '',
-    `Gere o HTML completo (com <style> inline) de um slide de carrossel`,
-    `1080x1350px, seguindo o template "${slide.template}" definido acima.`,
-    `Título: ${slide.headline}`,
-    `Corpo: ${slide.body}`,
-    '',
-    'Responda apenas com o HTML, sem markdown ao redor.',
-  ].join('\n');
+const PALETTE = {
+  charcoal: '#0A0A0A',
+  cream: '#F2F0E8',
+  accent: '#FF3B0A',
+  purpleBlack: '#11101D',
+} as const;
+
+const HEADLINE_FONT_STACK = '"Arial Narrow", Arial, sans-serif';
+const BODY_FONT_STACK = 'Arial, Helvetica, sans-serif';
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
-export async function generateSlideHtml(slide: SlideCopy): Promise<string> {
-  const provider = resolveProvider('HTML_GENERATION');
-  const prompt = buildPrompt(slide);
-  const html = provider === 'nvidia' ? await completeWithNvidia(prompt) : await completeWithClaude(prompt);
+function renderHeadlineWithAccent(headline: string): string {
+  const words = headline.trim().split(/\s+/);
+  const lastWord = words.pop() ?? '';
+  const rest = words.map(escapeHtml).join(' ');
+  return `${rest} <span style="color:${PALETTE.accent}">${escapeHtml(lastWord)}</span>`;
+}
 
-  if (!html.includes('<html') && !html.includes('<body')) {
-    throw new Error('generateSlideHtml: provider response does not look like HTML');
+function renderCoverSlide(slide: SlideCopy): string {
+  return `<!doctype html>
+<html>
+  <body style="margin:0;width:1080px;height:1350px;background:${PALETTE.charcoal};display:flex;align-items:flex-end;box-sizing:border-box;padding:64px;">
+    <div>
+      <p style="font-family:${BODY_FONT_STACK};color:${PALETTE.cream};font-size:28px;margin:0 0 16px;">${escapeHtml(slide.body)}</p>
+      <h1 style="font-family:${HEADLINE_FONT_STACK};font-weight:800;text-transform:uppercase;color:${PALETTE.cream};font-size:72px;line-height:1.05;margin:0;">${renderHeadlineWithAccent(slide.headline)}</h1>
+    </div>
+  </body>
+</html>`;
+}
+
+function renderEvidenceSlide(slide: SlideCopy): string {
+  return `<!doctype html>
+<html>
+  <body style="margin:0;width:1080px;height:1350px;background:${PALETTE.cream};box-sizing:border-box;padding:64px;display:flex;flex-direction:column;justify-content:center;">
+    <h2 style="font-family:${HEADLINE_FONT_STACK};font-weight:800;text-transform:uppercase;color:${PALETTE.charcoal};font-size:56px;line-height:1.1;margin:0 0 32px;">${renderHeadlineWithAccent(slide.headline)}</h2>
+    <p style="font-family:${BODY_FONT_STACK};color:${PALETTE.charcoal};font-size:32px;line-height:1.4;margin:0;">${escapeHtml(slide.body)}</p>
+    <p style="font-family:${BODY_FONT_STACK};color:${PALETTE.charcoal};font-size:18px;opacity:0.6;margin-top:auto;">@carousel-desk</p>
+  </body>
+</html>`;
+}
+
+function renderFrameworkSlide(slide: SlideCopy): string {
+  const lines = slide.body
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const bodyHtml =
+    lines.length > 1
+      ? `<ul style="padding-left:32px;margin:0;">${lines
+          .map((line) => `<li style="margin-bottom:16px;">${escapeHtml(line)}</li>`)
+          .join('')}</ul>`
+      : `<p style="margin:0;">${escapeHtml(slide.body)}</p>`;
+
+  return `<!doctype html>
+<html>
+  <body style="margin:0;width:1080px;height:1350px;background:${PALETTE.purpleBlack};color:${PALETTE.cream};box-sizing:border-box;padding:64px;display:flex;flex-direction:column;justify-content:center;font-family:${BODY_FONT_STACK};font-size:30px;line-height:1.4;">
+    <h2 style="font-family:${HEADLINE_FONT_STACK};font-weight:800;text-transform:uppercase;font-size:56px;line-height:1.1;margin:0 0 32px;">${renderHeadlineWithAccent(slide.headline)}</h2>
+    ${bodyHtml}
+  </body>
+</html>`;
+}
+
+export function generateSlideHtml(slide: SlideCopy): string {
+  switch (slide.template) {
+    case 'cover':
+      return renderCoverSlide(slide);
+    case 'evidence':
+      return renderEvidenceSlide(slide);
+    case 'framework':
+      return renderFrameworkSlide(slide);
+    default: {
+      const exhaustiveCheck: never = slide.template;
+      throw new Error(`generateSlideHtml: unknown template "${String(exhaustiveCheck)}"`);
+    }
   }
-
-  return html;
 }
 ```
 
 - [ ] **Step 4: Rodar o teste e confirmar que passa**
 
 Run: `npm test -- generateSlideHtml.test.ts`
-Expected: PASS (2 testes)
+Expected: PASS (4 testes)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/lib/ai/generateSlideHtml.ts src/lib/ai/generateSlideHtml.test.ts
-git commit -m "feat: add slide HTML generation pipeline step"
+git commit -m "feat: add deterministic slide HTML templates (no AI, brand-locked)"
 ```
 
 ---

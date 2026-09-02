@@ -25,10 +25,16 @@ Instagram.
   (nenhum container/serviço extra).
 - **Geração visual**: não integra o OpenDesign como dependência (ele é
   feito para uso interativo humano+agente, não para rodar sozinho em
-  background). Em vez disso, replica-se a ideia central: um arquivo
-  `DESIGN.md` (contrato de marca) + LLM gerando HTML por template +
-  Playwright renderizando o HTML em PNG de alta resolução (viewport exato +
-  `deviceScaleFactor` 2x/3x — não é um "print de tela", é renderização
+  background). Em vez disso, replica-se a ideia central, mas travada: um
+  arquivo `DESIGN.md` (contrato de marca) documenta o sistema visual, e o
+  HTML de cada slide é montado por **templates determinísticos no
+  código** (não gerados por IA) — três funções fixas (`cover`/`evidence`/
+  `framework`) que aplicam paleta, tipografia e layout do `DESIGN.md`
+  diretamente, só injetando o texto que a IA escreveu. Isso é uma trava
+  proposital: nenhum provedor de IA, gratuito ou pago, pode fugir do
+  padrão visual da marca, e a etapa não depende de nenhuma chamada de IA.
+  Playwright renderiza esse HTML em PNG de alta resolução (viewport exato
+  + `deviceScaleFactor` 2x/3x — não é um "print de tela", é renderização
   controlada, sem perda de qualidade).
 - **Fontes de imagem**: combinação de banco de imagens com licença
   (Unsplash/Pexels) e scraping de imagens reais da web (via Scrapling). A
@@ -38,10 +44,12 @@ Instagram.
 - **Provedores de IA configuráveis por etapa**: NVIDIA NIM (grátis) e Claude
   (Anthropic, pago) por trás de uma interface comum, escolhidos via
   variável de ambiente por tarefa — o usuário pode rodar 100% grátis (só
-  NVIDIA) ou misto. Recomendação (não obrigatória): NVIDIA para sugestão de
-  tema e análise de imagem de referência; Claude para copywriting e geração
-  de HTML dos slides (as duas etapas que definem a qualidade visível da
-  marca, com volume baixo — 1 post/dia — então custo desprezível).
+  NVIDIA) ou misto. As únicas etapas que chamam IA são sugestão de tema,
+  análise de imagem de referência e copywriting (a geração de HTML do
+  slide é determinística, sem IA — ver "Geração visual" acima). Ponto de
+  partida: 100% NVIDIA (grátis); trocar `PROVIDER_COPYWRITING` para
+  `claude` é uma opção disponível se a qualidade do texto justificar o
+  custo (baixíssimo nesse volume — 1 post/dia).
 - **Fluxo de rejeição/edição**: o usuário pode tanto **editar o texto** de
   cada slide (e regenerar só a imagem daquele slide) quanto **rejeitar sem
   editar** (o tema volta para a fila e tudo é gerado do zero).
@@ -97,10 +105,10 @@ Render (Web Service free — Next.js, App Router, TypeScript)
    ├─ /api/pipeline/discover   → Scrapling busca temas + imagens de
    │                             referência; grava Theme (status: pending)
    ├─ /api/pipeline/generate   → após aprovação de tema: gera copy (LLM),
-   │                             gera HTML por slide (LLM + DESIGN.md),
-   │                             renderiza PNG (Playwright), sobe no
-   │                             Cloudinary, grava Post+Slides (status:
-   │                             pending_approval)
+   │                             monta o HTML por slide (template
+   │                             determinístico, sem IA), renderiza PNG
+   │                             (Playwright), sobe no Cloudinary, grava
+   │                             Post+Slides (status: pending_approval)
    ├─ /api/pipeline/publish    → publica carrossel aprovado+agendado via
    │                             Instagram Graph API; após sucesso, apaga as
    │                             imagens dos slides no Cloudinary
@@ -163,13 +171,14 @@ Anthropic) via variável de ambiente:
 ```
 PROVIDER_THEME_SUGGESTION=nvidia
 PROVIDER_IMAGE_ANALYSIS=nvidia
-PROVIDER_COPYWRITING=claude
-PROVIDER_HTML_GENERATION=claude
+PROVIDER_COPYWRITING=nvidia
 ```
 
-Funções: `suggestThemes()`, `analyzeReferenceImage()`, `writeCopy()`,
-`generateSlideHtml()`. Cada uma é agnóstica ao provedor por fora — trocar de
-config não exige mudança de código chamador.
+Funções que usam IA: `suggestThemes()`, `analyzeReferenceImage()`,
+`writeCopy()` — agnósticas ao provedor por fora, trocar de config não exige
+mudança de código chamador. `generateSlideHtml()` **não** está nessa lista:
+é uma função determinística (templates fixos em código), sem provedor
+configurável, garantindo que o visual nunca fuja do `DESIGN.md`.
 
 ## Tratamento de erro
 
