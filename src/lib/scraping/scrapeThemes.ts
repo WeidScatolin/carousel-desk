@@ -1,14 +1,5 @@
 import * as cheerio from 'cheerio';
 
-export interface SourceConfig {
-  url: string;
-  articleSelector: string;
-  linkSelector: string;
-  headlineSelector: string;
-  summarySelector: string;
-  imageSelector: string;
-}
-
 export interface ScrapedCandidate {
   sourceUrl: string;
   headline: string;
@@ -16,34 +7,18 @@ export interface ScrapedCandidate {
   referenceImageUrls: string[];
 }
 
-const MAX_REFERENCE_IMAGES = 2;
+export interface SourceConfig {
+  url: string;
+  extract: ($: cheerio.CheerioAPI, sourceUrl: string) => ScrapedCandidate[];
+}
 
-export const SOURCES: readonly SourceConfig[] = [
-  {
-    url: 'https://techcrunch.com/latest/',
-    articleSelector: 'article',
-    linkSelector: 'a',
-    headlineSelector: 'h2, h3',
-    summarySelector: 'p',
-    imageSelector: 'img',
-  },
-  {
-    url: 'https://www.theverge.com/tech',
-    articleSelector: 'article',
-    linkSelector: 'a',
-    headlineSelector: 'h2, h3',
-    summarySelector: 'p',
-    imageSelector: 'img',
-  },
-  {
-    url: 'https://arstechnica.com/gadgets/',
-    articleSelector: 'article',
-    linkSelector: 'a',
-    headlineSelector: 'h2, h3',
-    summarySelector: 'p',
-    imageSelector: 'img',
-  },
-];
+function dedupeBySourceUrl(candidates: ScrapedCandidate[]): ScrapedCandidate[] {
+  const bySourceUrl = new Map<string, ScrapedCandidate>();
+  for (const candidate of candidates) {
+    bySourceUrl.set(candidate.sourceUrl, candidate);
+  }
+  return Array.from(bySourceUrl.values());
+}
 
 export function normalizeUrl(baseUrl: string, value: string): string {
   const trimmed = value.trim();
@@ -60,42 +35,50 @@ export function normalizeUrl(baseUrl: string, value: string): string {
   }
 }
 
-function firstText(article: cheerio.Cheerio<import('domhandler').Element>, selector: string): string {
-  return article.find(selector).first().text().trim().replace(/\s+/g, ' ');
+// TechCrunch's listing cards have no <article> wrapper; the headline lives in
+// h3.loop-card__title > a.loop-card__title-link (verified against the live
+// site — the site has no separate excerpt/dek at this listing depth).
+function extractTechCrunch($: cheerio.CheerioAPI, sourceUrl: string): ScrapedCandidate[] {
+  const candidates: ScrapedCandidate[] = [];
+  $('h3.loop-card__title a.loop-card__title-link').each((_, element) => {
+    const link = $(element);
+    const href = normalizeUrl(sourceUrl, link.attr('href') ?? '');
+    const headline = link.text().trim().replace(/\s+/g, ' ');
+    if (href && headline) {
+      candidates.push({ sourceUrl: href, headline, summary: '', referenceImageUrls: [] });
+    }
+  });
+  return dedupeBySourceUrl(candidates);
 }
 
-function imageUrls(
-  $: cheerio.CheerioAPI,
-  article: cheerio.Cheerio<import('domhandler').Element>,
-  sourceUrl: string,
-  selector: string,
-): string[] {
-  const normalized = article
-    .find(selector)
-    .toArray()
-    .map((element) => $(element).attr('src') ?? $(element).attr('data-src') ?? '')
-    .map((raw) => normalizeUrl(sourceUrl, raw))
-    .filter((url) => url.length > 0);
-
-  return Array.from(new Set(normalized)).slice(0, MAX_REFERENCE_IMAGES);
+// The Verge's listing cards use a div[role="article"] wrapper whose direct
+// child <a> carries both the link (relative href) and the headline (as
+// aria-label, not text content) — verified against the live site.
+function extractTheVerge($: cheerio.CheerioAPI, sourceUrl: string): ScrapedCandidate[] {
+  const candidates: ScrapedCandidate[] = [];
+  $('[role="article"] > a[aria-label]').each((_, element) => {
+    const link = $(element);
+    const href = normalizeUrl(sourceUrl, link.attr('href') ?? '');
+    const headline = (link.attr('aria-label') ?? '').trim();
+    if (href && headline) {
+      candidates.push({ sourceUrl: href, headline, summary: '', referenceImageUrls: [] });
+    }
+  });
+  return dedupeBySourceUrl(candidates);
 }
+
+// Ars Technica is deliberately excluded from the default sources: it returns
+// an empty 202 response to a plain fetch (Cloudflare bot-protection challenge)
+// and would require a headless browser to bypass, which the discover route
+// intentionally avoids.
+export const SOURCES: readonly SourceConfig[] = [
+  { url: 'https://techcrunch.com/latest/', extract: extractTechCrunch },
+  { url: 'https://www.theverge.com/tech', extract: extractTheVerge },
+];
 
 export function parseSource(html: string, source: SourceConfig): ScrapedCandidate[] {
   const $ = cheerio.load(html);
-
-  return $(source.articleSelector)
-    .toArray()
-    .map((element) => {
-      const article = $(element) as cheerio.Cheerio<import('domhandler').Element>;
-      const href = article.find(source.linkSelector).first().attr('href') ?? '';
-      return {
-        sourceUrl: normalizeUrl(source.url, href),
-        headline: firstText(article, source.headlineSelector),
-        summary: firstText(article, source.summarySelector),
-        referenceImageUrls: imageUrls($, article, source.url, source.imageSelector),
-      };
-    })
-    .filter((candidate) => candidate.sourceUrl.length > 0 && candidate.headline.length > 0);
+  return source.extract($, source.url);
 }
 
 async function defaultFetchHtml(url: string): Promise<string> {
