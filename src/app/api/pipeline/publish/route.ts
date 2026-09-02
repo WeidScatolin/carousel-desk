@@ -2,7 +2,7 @@ import { publishCarousel } from '@/lib/instagram/publishCarousel';
 import { prisma } from '@/lib/prisma';
 import { deleteSlideImage } from '@/lib/storage/cloudinary';
 
-interface PublishResult { published: boolean; }
+interface PublishResult { claimed: boolean; published: boolean; }
 interface ReadySlide { id: string; imageUrl: string; cloudinaryPublicId: string; }
 
 function errorMessage(error: unknown): string {
@@ -37,7 +37,20 @@ async function cleanPublishedSlides(slides: ReadonlyArray<ReadySlide>): Promise<
   return failures;
 }
 
+async function claimPost(postId: string): Promise<boolean> {
+  const claim = await prisma.post.updateMany({
+    where: { id: postId, status: 'scheduled' },
+    data: { status: 'publishing' },
+  });
+  return claim.count === 1;
+}
+
 async function processPost(post: { id: string; slides: ReadonlyArray<{ id: string; imageUrl: string | null; cloudinaryPublicId: string | null }> }): Promise<PublishResult> {
+  const claimed = await claimPost(post.id);
+  if (!claimed) {
+    return { claimed: false, published: false };
+  }
+
   let slides: ReadySlide[];
   let instagramPostId: string;
   try {
@@ -48,7 +61,7 @@ async function processPost(post: { id: string; slides: ReadonlyArray<{ id: strin
     });
   } catch (error) {
     await prisma.post.update({ where: { id: post.id }, data: { status: 'error', errorMessage: errorMessage(error) } });
-    return { published: false };
+    return { claimed: true, published: false };
   }
   await prisma.post.update({
     where: { id: post.id },
@@ -58,7 +71,7 @@ async function processPost(post: { id: string; slides: ReadonlyArray<{ id: strin
   if (cleanupFailures.length > 0) {
     await prisma.post.update({ where: { id: post.id }, data: { errorMessage: cleanupFailures.join('; ') } });
   }
-  return { published: true };
+  return { claimed: true, published: true };
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -73,6 +86,7 @@ export async function POST(request: Request): Promise<Response> {
   });
   const results: PublishResult[] = [];
   for (const post of posts) results.push(await processPost(post));
-  const published = results.filter((result) => result.published).length;
-  return Response.json({ processed: results.length, published, failed: results.length - published });
+  const attempted = results.filter((result) => result.claimed);
+  const published = attempted.filter((result) => result.published).length;
+  return Response.json({ processed: attempted.length, published, failed: attempted.length - published });
 }

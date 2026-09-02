@@ -119,6 +119,18 @@ describe('POST /api/pipeline/publish', () => {
     expect(stored.slides[1].imageUrl).toBeNull();
   });
 
+  test('publishes a post only once when two requests race for it concurrently', async () => {
+    await createScheduledPost();
+    vi.mocked(publishCarousel).mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve('instagram-post-1'), 20))
+    );
+    const [firstResponse, secondResponse] = await Promise.all([POST(authorizedRequest()), POST(authorizedRequest())]);
+    const [firstBody, secondBody] = await Promise.all([firstResponse.json(), secondResponse.json()]);
+    expect(publishCarousel).toHaveBeenCalledTimes(1);
+    const totalPublished = firstBody.published + secondBody.published;
+    expect(totalPublished).toBe(1);
+  });
+
   test('is idempotent across consecutive runs after the first run publishes the post', async () => {
     await createScheduledPost();
     vi.mocked(publishCarousel).mockResolvedValue('instagram-post-1');
