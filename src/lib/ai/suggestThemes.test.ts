@@ -12,7 +12,7 @@ const candidates = Array.from({ length: 5 }, (_, index) => ({
   sourceUrl: `https://example.com/${index}`,
   headline: `Headline ${index}`,
   summary: `Summary ${index}`,
-  referenceImageUrls: [],
+  referenceImageUrls: index === 0 ? [`https://example.com/${index}/photo.jpg`] : [],
 }));
 
 describe('suggestThemes', () => {
@@ -39,6 +39,8 @@ describe('suggestThemes', () => {
     // Assert
     expect(result).toHaveLength(3);
     expect(result[0]?.headlineSuggestion).toBe('Editorial Headline 0');
+    expect(result[0]?.referenceImageUrls).toEqual(['https://example.com/0/photo.jpg']);
+    expect(result[1]?.referenceImageUrls).toEqual([]);
     expect(completeWithNvidia).toHaveBeenCalledWith(expect.stringContaining('EDITORIAL SYSTEM'));
     expect(completeWithClaude).not.toHaveBeenCalled();
   });

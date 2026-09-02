@@ -17,6 +17,7 @@ export interface ThemeSuggestion {
   sourceUrl: string;
   headlineSuggestion: string;
   summary: string;
+  referenceImageUrls: string[];
 }
 
 function buildPrompt(candidates: ScrapedCandidate[]): string {
@@ -39,15 +40,18 @@ function parseSuggestions(raw: string, candidates: ScrapedCandidate[]): ThemeSug
     throw new Error(`suggestThemes: provider response was not valid JSON: ${raw}`);
   }
   const suggestions = suggestionsSchema.parse(parsed);
-  const sourceUrls = new Set(candidates.map(({ sourceUrl }) => sourceUrl));
-  if (suggestions.some(({ sourceUrl }) => !sourceUrls.has(sourceUrl))) {
+  const candidatesByUrl = new Map(candidates.map((candidate) => [candidate.sourceUrl, candidate]));
+  if (suggestions.some(({ sourceUrl }) => !candidatesByUrl.has(sourceUrl))) {
     throw new Error('suggestThemes: suggestion sourceUrl was not present in candidates');
   }
   const selectedUrls = new Set(suggestions.map(({ sourceUrl }) => sourceUrl));
   if (selectedUrls.size !== suggestions.length) {
     throw new Error('suggestThemes: sourceUrl values must be unique');
   }
-  return suggestions;
+  return suggestions.map((suggestion) => ({
+    ...suggestion,
+    referenceImageUrls: candidatesByUrl.get(suggestion.sourceUrl)?.referenceImageUrls ?? [],
+  }));
 }
 
 export async function suggestThemes(

@@ -1,8 +1,11 @@
 import { prisma } from '@/lib/prisma';
 import { writeCopy } from '../ai/writeCopy';
 import { generateSlideHtml } from '../ai/generateSlideHtml';
+import { resolveThemeImage } from '../images/resolveThemeImage';
 import { renderSlideToImage } from '../render/renderSlideToImage';
 import { uploadSlideImage } from '../storage/cloudinary';
+
+const TEMPLATES_WITH_IMAGE = new Set(['cover', 'evidence']);
 
 export async function generatePostFromTheme(themeId: string): Promise<string> {
   const theme = await prisma.theme.findUniqueOrThrow({ where: { id: themeId } });
@@ -17,8 +20,16 @@ export async function generatePostFromTheme(themeId: string): Promise<string> {
       summary: theme.summary,
     });
 
+    const themeImage = await resolveThemeImage({
+      headlineSuggestion: theme.headlineSuggestion,
+      referenceImageUrls: theme.referenceImageUrls,
+    });
+
     for (const [index, slideCopy] of slidesCopy.entries()) {
-      const html = await generateSlideHtml(slideCopy);
+      const usesImage = TEMPLATES_WITH_IMAGE.has(slideCopy.template);
+      const slideImage = usesImage ? themeImage : null;
+
+      const html = await generateSlideHtml(slideCopy, slideImage?.url);
       const imageBuffer = await renderSlideToImage(html);
       const publicId = `${post.id}-slide-${index}`;
       const uploaded = await uploadSlideImage(imageBuffer, publicId);
@@ -31,7 +42,8 @@ export async function generatePostFromTheme(themeId: string): Promise<string> {
           htmlContent: html,
           imageUrl: uploaded.url,
           cloudinaryPublicId: uploaded.publicId,
-          imageSource: 'stock',
+          imageSource: slideImage?.source ?? 'stock',
+          sourceImageUrl: slideImage?.sourceImageUrl ?? null,
         },
       });
     }

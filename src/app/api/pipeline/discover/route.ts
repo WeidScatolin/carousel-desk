@@ -29,6 +29,7 @@ export async function POST(request: Request): Promise<Response> {
       update: {
         headlineSuggestion: suggestion.headlineSuggestion,
         summary: suggestion.summary,
+        referenceImageUrls: suggestion.referenceImageUrls,
       },
     })));
     return Response.json({ success: true, data: { discovered: suggestions.length } });

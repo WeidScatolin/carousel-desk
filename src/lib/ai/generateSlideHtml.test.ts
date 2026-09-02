@@ -50,4 +50,40 @@ describe('generateSlideHtml', () => {
     expect(styleValue).not.toContain('"');
     expect(styleValue).toContain('font-family');
   });
+
+  test('renders a full-bleed background photo with a darkened overlay on the cover slide when an image is given', () => {
+    const html = generateSlideHtml(
+      { template: 'cover', headline: 'IA muda o jogo', body: 'Resumo' },
+      'https://example.com/cover.jpg',
+    );
+
+    expect(html).toContain('<img src="https://example.com/cover.jpg"');
+    expect(html).toContain('object-fit:cover');
+    expect(html).toContain('linear-gradient');
+  });
+
+  test('omits the background image markup on the cover slide when no image is given', () => {
+    const html = generateSlideHtml({ template: 'cover', headline: 'IA muda o jogo', body: 'Resumo' });
+
+    expect(html).not.toContain('<img');
+  });
+
+  test('renders a small support image on the evidence slide when an image is given', () => {
+    const html = generateSlideHtml(
+      { template: 'evidence', headline: 'Os dados mostram X', body: 'Resumo' },
+      'https://example.com/evidence.jpg',
+    );
+
+    expect(html).toContain('<img src="https://example.com/evidence.jpg"');
+    expect(html).toContain('height:320px');
+  });
+
+  test('ignores an image URL on the framework slide (no image in this template)', () => {
+    const html = generateSlideHtml(
+      { template: 'framework', headline: 'Modelo 01', body: 'Passo único' },
+      'https://example.com/framework.jpg',
+    );
+
+    expect(html).not.toContain('<img');
+  });
 });

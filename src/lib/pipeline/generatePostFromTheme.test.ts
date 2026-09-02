@@ -2,11 +2,13 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../ai/writeCopy', () => ({ writeCopy: vi.fn() }));
 vi.mock('../ai/generateSlideHtml', () => ({ generateSlideHtml: vi.fn() }));
+vi.mock('../images/resolveThemeImage', () => ({ resolveThemeImage: vi.fn() }));
 vi.mock('../render/renderSlideToImage', () => ({ renderSlideToImage: vi.fn() }));
 vi.mock('../storage/cloudinary', () => ({ uploadSlideImage: vi.fn() }));
 
 import { writeCopy } from '../ai/writeCopy';
 import { generateSlideHtml } from '../ai/generateSlideHtml';
+import { resolveThemeImage } from '../images/resolveThemeImage';
 import { renderSlideToImage } from '../render/renderSlideToImage';
 import { uploadSlideImage } from '../storage/cloudinary';
 import { generatePostFromTheme } from './generatePostFromTheme';
@@ -18,6 +20,7 @@ describe('generatePostFromTheme', () => {
   beforeEach(async () => {
     vi.mocked(writeCopy).mockReset();
     vi.mocked(generateSlideHtml).mockReset();
+    vi.mocked(resolveThemeImage).mockReset().mockResolvedValue(null);
     vi.mocked(renderSlideToImage).mockReset();
     vi.mocked(uploadSlideImage).mockReset();
 
@@ -59,6 +62,46 @@ describe('generatePostFromTheme', () => {
     expect(post.status).toBe('pending_approval');
     expect(post.slides).toHaveLength(1);
     expect(post.slides[0].imageUrl).toBe('https://cloudinary.test/img.png');
+  });
+
+  test('passes the resolved theme image to cover/evidence slides and records its source', async () => {
+    vi.mocked(writeCopy).mockResolvedValue([
+      { template: 'cover', headline: 'Título', body: 'Corpo' },
+      { template: 'framework', headline: 'Modelo 01', body: 'Passo único' },
+    ]);
+    vi.mocked(resolveThemeImage).mockResolvedValue({
+      url: 'https://example.com/photo.jpg',
+      source: 'scraped',
+      sourceImageUrl: 'https://example.com/photo.jpg',
+    });
+    vi.mocked(generateSlideHtml).mockResolvedValue('<html><body>slide</body></html>');
+    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
+    vi.mocked(uploadSlideImage).mockResolvedValue({
+      url: 'https://cloudinary.test/img.png',
+      publicId: 'test-public-id',
+    });
+
+    const postId = await generatePostFromTheme(themeId);
+
+    const post = await prisma.post.findUniqueOrThrow({
+      where: { id: postId },
+      include: { slides: { orderBy: { order: 'asc' } } },
+    });
+
+    expect(generateSlideHtml).toHaveBeenNthCalledWith(
+      1,
+      { template: 'cover', headline: 'Título', body: 'Corpo' },
+      'https://example.com/photo.jpg',
+    );
+    expect(generateSlideHtml).toHaveBeenNthCalledWith(
+      2,
+      { template: 'framework', headline: 'Modelo 01', body: 'Passo único' },
+      undefined,
+    );
+    expect(post.slides[0].imageSource).toBe('scraped');
+    expect(post.slides[0].sourceImageUrl).toBe('https://example.com/photo.jpg');
+    expect(post.slides[1].imageSource).toBe('stock');
+    expect(post.slides[1].sourceImageUrl).toBeNull();
   });
 
   test('marks the post as error when generation fails', async () => {

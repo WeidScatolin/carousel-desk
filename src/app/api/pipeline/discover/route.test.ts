@@ -72,6 +72,7 @@ describe('POST /api/pipeline/discover', () => {
       sourceUrl: 'https://example.com/news',
       headlineSuggestion: 'Editorial headline',
       summary: 'Editorial summary',
+      referenceImageUrls: ['https://example.com/photo.jpg'],
     }];
     vi.mocked(scrapeThemes).mockResolvedValue(candidates);
     vi.mocked(suggestThemes).mockResolvedValue(suggestions);
@@ -89,11 +90,13 @@ describe('POST /api/pipeline/discover', () => {
         sourceUrl: 'https://example.com/news',
         headlineSuggestion: 'Editorial headline',
         summary: 'Editorial summary',
+        referenceImageUrls: ['https://example.com/photo.jpg'],
         status: 'pending',
       },
       update: {
         headlineSuggestion: 'Editorial headline',
         summary: 'Editorial summary',
+        referenceImageUrls: ['https://example.com/photo.jpg'],
       },
     });
   });
