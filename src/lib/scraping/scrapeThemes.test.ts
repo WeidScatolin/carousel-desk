@@ -4,21 +4,22 @@ import { normalizeUrl, parseSource, scrapeThemes, SOURCES, type SourceConfig } f
 const TECHCRUNCH_HTML = `<!doctype html>
 <html>
   <body>
-    <div class="loop-card">
+    <li class="wp-block-post">
+      <img src="https://techcrunch.com/wp-content/uploads/2026/07/first.jpg?w=563" />
       <h3 class="loop-card__title">
         <a class="loop-card__title-link" href="https://techcrunch.com/2026/09/02/first-story/">First story ships</a>
       </h3>
-    </div>
-    <div class="loop-card">
+    </li>
+    <li class="wp-block-post">
       <h3 class="loop-card__title">
         <a class="loop-card__title-link" href="https://techcrunch.com/2026/09/02/second-story/">Second story ships</a>
       </h3>
-    </div>
-    <div class="loop-card">
+    </li>
+    <li class="wp-block-post">
       <h3 class="loop-card__title">
         <a class="loop-card__title-link" href="">Broken link is skipped</a>
       </h3>
-    </div>
+    </li>
   </body>
 </html>`;
 
@@ -27,9 +28,12 @@ const THE_VERGE_HTML = `<!doctype html>
   <body>
     <div class="content-card" role="article">
       <a aria-label="Samsung ships a new laptop" href="/tech/1/samsung-ships-a-new-laptop"></a>
+      <img src="/chorus/author_profile_images/1/samsung-reporter.jpg?crop=100" alt="Reporter avatar" />
+      <img src="/photos/samsung-laptop-hero.jpg" alt="The new laptop" />
     </div>
     <div class="content-card" role="article">
       <a aria-label="A platform update rolls out" href="/tech/2/a-platform-update-rolls-out"></a>
+      <img src="/chorus/author_profile_images/2/other-reporter.jpg" alt="Reporter avatar" />
     </div>
     <div class="content-card" role="article">
       <a href="/tech/3/no-aria-label-is-skipped"></a>
@@ -41,7 +45,7 @@ const TECHCRUNCH_SOURCE: SourceConfig = SOURCES[0]!;
 const THE_VERGE_SOURCE: SourceConfig = SOURCES[1]!;
 
 describe('parseSource', () => {
-  test('extracts headline and absolute URL from TechCrunch-style listing cards', () => {
+  test('extracts headline, absolute URL and card thumbnail for TechCrunch-style listing cards', () => {
     // Arrange / Act
     const candidates = parseSource(TECHCRUNCH_HTML, TECHCRUNCH_SOURCE);
 
@@ -51,7 +55,7 @@ describe('parseSource', () => {
         sourceUrl: 'https://techcrunch.com/2026/09/02/first-story/',
         headline: 'First story ships',
         summary: '',
-        referenceImageUrls: [],
+        referenceImageUrls: ['https://techcrunch.com/wp-content/uploads/2026/07/first.jpg?w=563'],
       },
       {
         sourceUrl: 'https://techcrunch.com/2026/09/02/second-story/',
@@ -62,7 +66,7 @@ describe('parseSource', () => {
     ]);
   });
 
-  test('extracts headline from aria-label and resolves relative URLs for The Verge-style cards', () => {
+  test('extracts headline from aria-label, resolves relative URLs, and filters out author avatars for The Verge-style cards', () => {
     // Arrange / Act
     const candidates = parseSource(THE_VERGE_HTML, THE_VERGE_SOURCE);
 
@@ -72,7 +76,7 @@ describe('parseSource', () => {
         sourceUrl: 'https://www.theverge.com/tech/1/samsung-ships-a-new-laptop',
         headline: 'Samsung ships a new laptop',
         summary: '',
-        referenceImageUrls: [],
+        referenceImageUrls: ['https://www.theverge.com/photos/samsung-laptop-hero.jpg'],
       },
       {
         sourceUrl: 'https://www.theverge.com/tech/2/a-platform-update-rolls-out',
