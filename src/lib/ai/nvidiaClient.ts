@@ -15,7 +15,7 @@ function getClient(): OpenAI {
 
 export async function completeWithNvidia(
   prompt: string,
-  model = 'meta/llama-3.3-70b-instruct'
+  model = 'meta/llama-3.2-11b-vision-instruct'
 ): Promise<string> {
   const openai = getClient();
   const response = await openai.chat.completions.create({
