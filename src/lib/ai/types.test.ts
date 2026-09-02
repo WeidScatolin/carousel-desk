@@ -5,7 +5,7 @@ describe('resolveProvider', () => {
   test('returns nvidia when the env var is set to nvidia', () => {
     const result = resolveProvider('COPYWRITING', {
       PROVIDER_COPYWRITING: 'nvidia',
-    } as NodeJS.ProcessEnv);
+    } as unknown as NodeJS.ProcessEnv);
 
     expect(result).toBe('nvidia');
   });
@@ -13,7 +13,7 @@ describe('resolveProvider', () => {
   test('returns claude when the env var is set to claude', () => {
     const result = resolveProvider('IMAGE_ANALYSIS', {
       PROVIDER_IMAGE_ANALYSIS: 'claude',
-    } as NodeJS.ProcessEnv);
+    } as unknown as NodeJS.ProcessEnv);
 
     expect(result).toBe('claude');
   });
@@ -26,7 +26,7 @@ describe('resolveProvider', () => {
 
   test('throws when the env var has an invalid value', () => {
     expect(() =>
-      resolveProvider('IMAGE_ANALYSIS', { PROVIDER_IMAGE_ANALYSIS: 'gpt4' } as NodeJS.ProcessEnv)
+      resolveProvider('IMAGE_ANALYSIS', { PROVIDER_IMAGE_ANALYSIS: 'gpt4' } as unknown as NodeJS.ProcessEnv)
     ).toThrow('Missing or invalid PROVIDER_IMAGE_ANALYSIS');
   });
 });
