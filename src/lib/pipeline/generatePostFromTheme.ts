@@ -1,0 +1,55 @@
+import { prisma } from '@/lib/prisma';
+import { writeCopy } from '../ai/writeCopy';
+import { generateSlideHtml } from '../ai/generateSlideHtml';
+import { renderSlideToImage } from '../render/renderSlideToImage';
+import { uploadSlideImage } from '../storage/cloudinary';
+
+export async function generatePostFromTheme(themeId: string): Promise<string> {
+  const theme = await prisma.theme.findUniqueOrThrow({ where: { id: themeId } });
+
+  const post = await prisma.post.create({
+    data: { themeId: theme.id, status: 'generating' },
+  });
+
+  try {
+    const slidesCopy = await writeCopy({
+      headlineSuggestion: theme.headlineSuggestion,
+      summary: theme.summary,
+    });
+
+    for (const [index, slideCopy] of slidesCopy.entries()) {
+      const html = await generateSlideHtml(slideCopy);
+      const imageBuffer = await renderSlideToImage(html);
+      const publicId = `${post.id}-slide-${index}`;
+      const uploaded = await uploadSlideImage(imageBuffer, publicId);
+
+      await prisma.slide.create({
+        data: {
+          postId: post.id,
+          order: index,
+          template: slideCopy.template,
+          htmlContent: html,
+          imageUrl: uploaded.url,
+          cloudinaryPublicId: uploaded.publicId,
+          imageSource: 'stock',
+        },
+      });
+    }
+
+    const updated = await prisma.post.update({
+      where: { id: post.id },
+      data: { status: 'pending_approval' },
+    });
+
+    return updated.id;
+  } catch (error) {
+    await prisma.post.update({
+      where: { id: post.id },
+      data: {
+        status: 'error',
+        errorMessage: error instanceof Error ? error.message : String(error),
+      },
+    });
+    throw error;
+  }
+}
