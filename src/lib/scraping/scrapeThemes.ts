@@ -86,7 +86,7 @@ export function parseSource(html: string, source: SourceConfig): ScrapedCandidat
   return $(source.articleSelector)
     .toArray()
     .map((element) => {
-      const article = $(element);
+      const article = $(element) as cheerio.Cheerio<import('domhandler').Element>;
       const href = article.find(source.linkSelector).first().attr('href') ?? '';
       return {
         sourceUrl: normalizeUrl(source.url, href),
