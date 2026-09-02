@@ -1,6 +1,9 @@
+import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
+from scrapling.fetchers import StealthyFetcher
 from scrapling.parser import Selector
 
 
@@ -62,3 +65,25 @@ def parse_source(html: str, source: SourceConfig) -> list[dict[str, object]]:
             "referenceImageUrls": image_urls(article, source.url, source.image_selector),
         }]
     return candidates
+
+
+def fetch_html(url: str) -> str:
+    page = StealthyFetcher.fetch(url, headless=True, network_idle=True)
+    return page.html_content
+
+
+def scrape_themes(fetch: Callable[[str], str]) -> list[dict[str, object]]:
+    by_url: dict[str, dict[str, object]] = {}
+    for source in SOURCES:
+        for candidate in parse_source(fetch(source.url), source):
+            by_url = {**by_url, str(candidate["sourceUrl"]): candidate}
+    return list(by_url.values())
+
+
+def main() -> None:
+    payload = {"candidates": scrape_themes(fetch_html)}
+    print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+
+
+if __name__ == "__main__":
+    main()
