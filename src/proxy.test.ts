@@ -62,4 +62,13 @@ describe('proxy', () => {
 
     expect(response.status).toBe(200);
   });
+
+  test.each(['/api/brand-strategy', '/api/lead-magnets', '/api/campaigns/abc'])(
+    'returns 401 for %s without a session',
+    async (path) => {
+      const response = await proxy(buildRequest(path));
+
+      expect(response.status).toBe(401);
+    },
+  );
 });
