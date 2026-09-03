@@ -167,6 +167,22 @@ describe('writeCarouselCopy', () => {
     );
   });
 
+  test('requires a ctaKeyword when postGoal is comment_dm, even if the carousel ends with a cta slide', async () => {
+    // Arrange
+    vi.stubEnv('PROVIDER_COPYWRITING', 'nvidia');
+    const slides = [
+      buildSlide({ role: 'cover', template: 'cover_cinematic', accentPhrase: null }),
+      ...Array.from({ length: 4 }, () => buildSlide()),
+      buildSlide({ role: 'cta', template: 'cta', accentPhrase: null }),
+    ];
+    vi.mocked(completeWithNvidia).mockResolvedValue(
+      JSON.stringify(buildValidResponse({ slides, ctaKeyword: null })),
+    );
+
+    // Act / Assert
+    await expect(writeCarouselCopy(theme, commentDmBrief, brand)).rejects.toThrow('must have a ctaKeyword');
+  });
+
   test('accepts a comment_dm carousel that ends with a cta slide', async () => {
     // Arrange
     vi.stubEnv('PROVIDER_COPYWRITING', 'nvidia');

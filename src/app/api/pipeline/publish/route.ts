@@ -1,6 +1,7 @@
 import { publishCarousel } from '@/lib/instagram/publishCarousel';
 import { prisma } from '@/lib/prisma';
 import { deleteSlideImage } from '@/lib/storage/cloudinary';
+import type { CampaignStatus } from '@/generated/prisma/client';
 
 interface PublishResult { claimed: boolean; published: boolean; }
 interface ReadySlide { id: string; imageUrl: string; cloudinaryPublicId: string; }
@@ -45,7 +46,26 @@ async function claimPost(postId: string): Promise<boolean> {
   return claim.count === 1;
 }
 
-async function processPost(post: { id: string; slides: ReadonlyArray<{ id: string; imageUrl: string | null; cloudinaryPublicId: string | null }> }): Promise<PublishResult> {
+interface PublishablePost {
+  id: string;
+  caption: string | null;
+  slides: ReadonlyArray<{ id: string; imageUrl: string | null; cloudinaryPublicId: string | null }>;
+  leadMagnetCampaign: { id: string; status: CampaignStatus } | null;
+}
+
+async function linkCampaignToPublishedMedia(campaign: { id: string; status: CampaignStatus }, instagramMediaId: string): Promise<void> {
+  await prisma.leadMagnetCampaign.update({
+    where: { id: campaign.id },
+    data: {
+      instagramMediaId,
+      // A campaign the user already paused, finished, or activated by
+      // hand keeps that status — publish only auto-activates a fresh DRAFT.
+      status: campaign.status === 'DRAFT' ? 'ACTIVE' : campaign.status,
+    },
+  });
+}
+
+async function processPost(post: PublishablePost): Promise<PublishResult> {
   const claimed = await claimPost(post.id);
   if (!claimed) {
     return { claimed: false, published: false };
@@ -58,6 +78,7 @@ async function processPost(post: { id: string; slides: ReadonlyArray<{ id: strin
     instagramPostId = await publishCarousel({
       instagramBusinessAccountId: requireAccountId(),
       slides: slides.map(({ imageUrl }) => ({ imageUrl })),
+      caption: post.caption ?? undefined,
     });
   } catch (error) {
     await prisma.post.update({ where: { id: post.id }, data: { status: 'error', errorMessage: errorMessage(error) } });
@@ -67,6 +88,9 @@ async function processPost(post: { id: string; slides: ReadonlyArray<{ id: strin
     where: { id: post.id },
     data: { status: 'published', publishedAt: new Date(), instagramPostId, errorMessage: null },
   });
+  if (post.leadMagnetCampaign) {
+    await linkCampaignToPublishedMedia(post.leadMagnetCampaign, instagramPostId);
+  }
   const cleanupFailures = await cleanPublishedSlides(slides);
   if (cleanupFailures.length > 0) {
     await prisma.post.update({ where: { id: post.id }, data: { errorMessage: cleanupFailures.join('; ') } });
@@ -82,7 +106,7 @@ export async function POST(request: Request): Promise<Response> {
   }
   const posts = await prisma.post.findMany({
     where: { status: 'scheduled', scheduledAt: { lte: new Date() } },
-    include: { slides: { orderBy: { order: 'asc' } } },
+    include: { slides: { orderBy: { order: 'asc' } }, leadMagnetCampaign: true },
   });
   const results: PublishResult[] = [];
   for (const post of posts) results.push(await processPost(post));

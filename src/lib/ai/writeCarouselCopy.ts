@@ -175,6 +175,9 @@ function validateStructure(copy: z.infer<typeof carouselCopySchema>, postGoal: s
     if (lastSlide?.role !== 'cta') {
       throw new Error('writeCarouselCopy: a comment_dm carousel must end with a "cta" slide');
     }
+    if (!copy.ctaKeyword) {
+      throw new Error('writeCarouselCopy: a comment_dm carousel must have a ctaKeyword');
+    }
   }
 }
 

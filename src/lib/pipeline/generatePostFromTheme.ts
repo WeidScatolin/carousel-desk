@@ -121,6 +121,28 @@ export async function generatePostFromTheme(themeId: string): Promise<string> {
       });
     }
 
+    if (contentBrief.postGoal === 'comment_dm') {
+      if (!copy.ctaKeyword) {
+        throw new Error('generatePostFromTheme: postGoal is comment_dm but the copy has no ctaKeyword');
+      }
+      if (!contentBrief.leadMagnet) {
+        throw new Error('generatePostFromTheme: postGoal is comment_dm but the theme has no linked LeadMagnet');
+      }
+      await prisma.leadMagnetCampaign.create({
+        data: {
+          carouselId: post.id,
+          leadMagnetId: contentBrief.leadMagnet.id,
+          name: `${contentBrief.leadMagnet.name} — ${theme.headlineSuggestion}`,
+          keyword: copy.ctaKeyword,
+          assetName: contentBrief.leadMagnet.name,
+          assetUrl: contentBrief.leadMagnet.deliveryUrl,
+          deliveryMessage: `Oi! Aqui está o ${contentBrief.leadMagnet.name} que você pediu:\n\n${contentBrief.leadMagnet.deliveryUrl}`,
+          qualificationQuestion: contentBrief.leadMagnet.qualificationQuestion,
+          status: 'DRAFT',
+        },
+      });
+    }
+
     const updated = await prisma.post.update({
       where: { id: post.id },
       data: {

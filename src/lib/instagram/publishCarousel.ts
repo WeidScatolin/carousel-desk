@@ -64,6 +64,7 @@ async function createItemContainer(
 export async function publishCarousel(post: {
   instagramBusinessAccountId: string;
   slides: { imageUrl: string }[];
+  caption?: string;
 }): Promise<string> {
   const token = getAccessToken();
   const children: string[] = [];
@@ -72,13 +73,19 @@ export async function publishCarousel(post: {
       await createItemContainer(post.instagramBusinessAccountId, slide.imageUrl, token)
     );
   }
+  // The Graph API takes the caption on the carousel container itself, not
+  // on individual item containers and not on the media_publish step.
+  const carouselForm: Record<string, string> = {
+    media_type: 'CAROUSEL',
+    children: children.join(','),
+    access_token: token,
+  };
+  if (post.caption) {
+    carouselForm.caption = post.caption;
+  }
   const carousel = await postForm(
     `${post.instagramBusinessAccountId}/media`,
-    new URLSearchParams({
-      media_type: 'CAROUSEL',
-      children: children.join(','),
-      access_token: token,
-    }),
+    new URLSearchParams(carouselForm),
     'carousel container'
   );
   return (

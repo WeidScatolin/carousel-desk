@@ -105,6 +105,7 @@ describe('generatePostFromTheme', () => {
 
   afterEach(async () => {
     await prisma.slide.deleteMany({ where: { post: { themeId } } });
+    await prisma.leadMagnetCampaign.deleteMany({ where: { post: { themeId } } });
     await prisma.post.deleteMany({ where: { themeId } });
     await prisma.contentBrief.deleteMany({ where: { themeId } });
     await prisma.theme.delete({ where: { id: themeId } });
@@ -195,6 +196,58 @@ describe('generatePostFromTheme', () => {
     expect(post.slides[0]?.sourceImageUrl).toBe('https://example.com/photo.jpg');
     expect(post.slides[1]?.imageSource).toBe('stock');
     expect(post.slides[1]?.sourceImageUrl).toBeNull();
+  });
+
+  test('creates a DRAFT LeadMagnetCampaign when postGoal is comment_dm and a lead magnet is linked', async () => {
+    const leadMagnet = await prisma.leadMagnet.create({
+      data: {
+        name: 'Mapa de Oportunidades',
+        description: 'desc',
+        deliveryUrl: 'https://example.com/mapa.pdf',
+        ctaKeyword: 'MAPA',
+        qualificationQuestion: 'Qual área consome mais tempo?',
+      },
+    });
+    await prisma.contentBrief.update({ where: { themeId }, data: { postGoal: 'comment_dm', leadMagnetId: leadMagnet.id } });
+    vi.mocked(writeCarouselCopy).mockResolvedValue({
+      ...validCopy,
+      ctaKeyword: 'MAPA',
+      slides: [
+        ...validCopy.slides,
+        buildSlide({ role: 'cta', template: 'cta', visualType: 'typography_only' }),
+      ],
+    });
+    vi.mocked(generateSlideHtml).mockResolvedValue('<html><body>slide</body></html>');
+    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
+    vi.mocked(uploadSlideImage).mockResolvedValue({ url: 'https://cloudinary.test/img.png', publicId: 'id' });
+
+    const postId = await generatePostFromTheme(themeId);
+
+    const campaign = await prisma.leadMagnetCampaign.findUniqueOrThrow({ where: { carouselId: postId } });
+    expect(campaign.status).toBe('DRAFT');
+    expect(campaign.keyword).toBe('MAPA');
+    expect(campaign.leadMagnetId).toBe(leadMagnet.id);
+    expect(campaign.assetUrl).toBe('https://example.com/mapa.pdf');
+    expect(campaign.qualificationQuestion).toBe('Qual área consome mais tempo?');
+
+    await prisma.leadMagnet.delete({ where: { id: leadMagnet.id } });
+  });
+
+  test('errors out when postGoal is comment_dm but no LeadMagnet is linked to the brief', async () => {
+    await prisma.contentBrief.update({ where: { themeId }, data: { postGoal: 'comment_dm' } });
+    vi.mocked(writeCarouselCopy).mockResolvedValue({
+      ...validCopy,
+      ctaKeyword: 'MAPA',
+      slides: [...validCopy.slides, buildSlide({ role: 'cta', template: 'cta' })],
+    });
+    vi.mocked(generateSlideHtml).mockResolvedValue('<html><body>slide</body></html>');
+    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
+    vi.mocked(uploadSlideImage).mockResolvedValue({ url: 'https://cloudinary.test/img.png', publicId: 'id' });
+
+    await expect(generatePostFromTheme(themeId)).rejects.toThrow('no linked LeadMagnet');
+
+    const posts = await prisma.post.findMany({ where: { themeId } });
+    expect(posts[0]?.status).toBe('error');
   });
 
   test('marks the post as error when copy generation fails', async () => {
