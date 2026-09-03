@@ -70,12 +70,36 @@ describe('PATCH /api/slides/[id]', () => {
     expect(prisma.slide.update).toHaveBeenCalledWith({
       where: { id: 'slide-1' },
       data: {
+        headline: 'Novo título',
+        body: 'Novo corpo',
         htmlContent: '<html>novo</html>',
         imageUrl: 'https://cloudinary.test/new.png',
         cloudinaryPublicId: 'new-public-id',
+        accentPhrase: 'não escala',
       },
     });
     expect(response.status).toBe(200);
+  });
+
+  test('accepts an explicit accentPhrase override, including clearing it with null', async () => {
+    vi.mocked(prisma.slide.findUniqueOrThrow).mockResolvedValue(baseSlide as never);
+    vi.mocked(prisma.slide.count).mockResolvedValue(9);
+    vi.mocked(generateSlideHtml).mockResolvedValue('<html>novo</html>');
+    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
+    vi.mocked(uploadSlideImage).mockResolvedValue({ url: 'https://cloudinary.test/new.png', publicId: 'new-id' });
+    vi.mocked(prisma.slide.update).mockResolvedValue({ id: 'slide-1' } as never);
+
+    await PATCH(buildRequest({ headline: 'Novo título', body: 'Novo corpo', accentPhrase: null }), {
+      params: Promise.resolve({ id: 'slide-1' }),
+    });
+
+    expect(generateSlideHtml).toHaveBeenCalledWith(
+      expect.objectContaining({ accentPhrase: null }),
+      'https://example.com/original-photo.jpg',
+    );
+    expect(prisma.slide.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ accentPhrase: null }) }),
+    );
   });
 
   test('preserves the original background photo, accentPhrase, kicker, sourceLabel and slide numbering on edit', async () => {

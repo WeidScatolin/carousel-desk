@@ -22,14 +22,18 @@ export async function PATCH(request: Request, { params }: RouteParams): Promise<
   const totalSlides = await prisma.slide.count({ where: { postId: slide.postId } });
 
   // Regenerating a slide's text must not silently drop its composition:
-  // the original background photo (sourceImageUrl), accentPhrase, kicker,
-  // sourceLabel and its position in the carousel all carry over unchanged.
+  // the original background photo (sourceImageUrl), kicker, sourceLabel
+  // and its position in the carousel all carry over unchanged.
+  // accentPhrase carries over too unless the caller explicitly sent a new
+  // value (including null, to clear it) — `undefined` means "untouched".
+  const accentPhrase = parsed.data.accentPhrase !== undefined ? parsed.data.accentPhrase : slide.accentPhrase;
+
   const html = await generateSlideHtml(
     {
       template: slide.template,
       headline: parsed.data.headline,
       body: parsed.data.body,
-      accentPhrase: slide.accentPhrase,
+      accentPhrase,
       kicker: slide.kicker,
       sourceLabel: slide.sourceLabel,
       slideNumber: slide.order + 1,
@@ -48,9 +52,12 @@ export async function PATCH(request: Request, { params }: RouteParams): Promise<
   const updated = await prisma.slide.update({
     where: { id },
     data: {
+      headline: parsed.data.headline,
+      body: parsed.data.body,
       htmlContent: html,
       imageUrl: uploaded.url,
       cloudinaryPublicId: uploaded.publicId,
+      accentPhrase,
     },
   });
 

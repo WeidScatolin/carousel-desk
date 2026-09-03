@@ -139,6 +139,8 @@ model Slide {
   post               Post            @relation(fields: [postId], references: [id])
   order              Int
   template           SlideTemplate
+  headline           String?
+  body               String?
   htmlContent        String
   imageUrl           String?
   cloudinaryPublicId String?
