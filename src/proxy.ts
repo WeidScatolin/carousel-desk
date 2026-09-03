@@ -10,6 +10,7 @@ const PROTECTED_API_PREFIXES = [
   '/api/brand-strategy',
   '/api/lead-magnets',
   '/api/campaigns',
+  '/api/comment-events',
 ];
 
 async function isRequestAuthenticated(request: NextRequest): Promise<boolean> {
@@ -58,5 +59,6 @@ export const config = {
     '/api/brand-strategy/:path*',
     '/api/lead-magnets/:path*',
     '/api/campaigns/:path*',
+    '/api/comment-events/:path*',
   ],
 };
