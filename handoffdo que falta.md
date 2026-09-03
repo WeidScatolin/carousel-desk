@@ -10,8 +10,8 @@ https://www.instagram.com/p/DczLP_tD1_M/
 
 - Produção: https://carousel-desk.vercel.app
 - Admin/dashboard: https://carousel-desk.vercel.app/admin (login em `/admin/login`)
-  - usuário: `goose`
-  - senha: `goose-carousel-2026`
+  - Credenciais: **redigidas deste documento em 2026-09-02 — repositório é público.**
+    Ver seção "Segurança — rotação obrigatória" no fim deste arquivo.
 - Projeto Vercel: `weiekingg-4990s-projects/carousel-desk`
 - Banco: Neon Postgres, provisionado via integração Vercel Marketplace
   (nome do resource: `neon-red-door`)
@@ -140,3 +140,43 @@ O `.env` local (neste worktree) tem só placeholders de teste, exceto
 `DATABASE_URL` — não é fonte confiável para produção. Use
 `vercel env pull .env.local --environment production` para puxar os valores
 reais quando precisar rodar algo localmente contra produção.
+
+## Segurança — rotação obrigatória (2026-09-02)
+
+Este repositório é **público**. O commit `02d79d0` ("docs: add handoff notes
+for session continuation on another machine") publicou o usuário e a senha
+do admin em texto puro neste arquivo. O valor foi redigido do working tree
+nesta edição, mas **já está no histórico do Git e no GitHub** — redigir o
+arquivo atual não remove a exposição.
+
+**Precisam ser rotacionados antes de qualquer coisa, porque foram expostos
+publicamente:**
+
+- `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH` (gerar um novo hash com
+  `scripts/hash-password.ts` ou equivalente do projeto e atualizar via
+  `vercel env add ... --force`)
+- `SESSION_SECRET` (qualquer sessão assinada com o segredo atual deve ser
+  considerada comprometida — gerar um novo valor aleatório e forçar logout
+  de todas as sessões ativas)
+
+Enquanto a rotação não acontece, considere o painel admin comprometido:
+qualquer pessoa com acesso ao histórico público do repositório tem a senha
+atual.
+
+**Sobre o histórico do Git:** o segredo continua acessível via
+`git log`/GitHub mesmo depois de redigido no HEAD atual. Remover isso do
+histórico exige reescrever commits (`git filter-repo` ou BFG Repo-Cleaner)
+seguido de `push --force` — uma operação destrutiva que reescreve SHAs para
+todo mundo com um clone do repositório. Isso **não foi executado** nesta
+sessão; passos de referência, apenas para quando houver confirmação
+explícita para prosseguir:
+
+1. `git filter-repo --path "handoffdo que falta.md" --invert-paths` (remove o
+   arquivo inteiro de todo o histórico) — ou usar `--replace-text` com um
+   arquivo listando o valor a ser substituído, se quiser manter o resto do
+   arquivo no histórico.
+2. Revisar o resultado localmente antes de qualquer push.
+3. `git push --force` para todos os branches remotos afetados.
+4. Avisar qualquer colaborador com clone local para re-clonar (SHAs mudam).
+5. Ainda assim, tratar a senha antiga como comprometida para sempre — a
+   rotação (acima) é obrigatória independente da limpeza do histórico.
