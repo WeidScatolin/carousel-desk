@@ -52,7 +52,12 @@ export function extractJsonBlock(raw: string): string {
 // Extracts, parses and validates a provider response in one step, with an
 // error message that names which call produced the bad response.
 export function parseJsonResponse<T>(raw: string, schema: z.ZodType<T>, context: string): T {
-  const block = extractJsonBlock(raw);
+  let block: string;
+  try {
+    block = extractJsonBlock(raw);
+  } catch {
+    throw new Error(`${context}: provider response was not valid JSON: ${raw}`);
+  }
 
   let parsed: unknown;
   try {

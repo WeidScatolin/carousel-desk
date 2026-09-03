@@ -63,10 +63,10 @@ describe('parseJsonResponse', () => {
     expect(result).toEqual({ name: 'ok' });
   });
 
-  test('names the failing call when JSON parsing fails', () => {
+  test('names the failing call when no JSON block is found at all', () => {
     // Arrange / Act / Assert
     expect(() => parseJsonResponse('nothing to see here', schema, 'testCall')).toThrow(
-      /no JSON object or array found/,
+      /testCall: provider response was not valid JSON/,
     );
   });
 
