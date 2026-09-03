@@ -74,4 +74,21 @@ describe('PATCH /api/slides/[id]', () => {
     });
     expect(response.status).toBe(200);
   });
+
+  test('returns 400 when the slide uses a template editing does not support yet', async () => {
+    vi.mocked(prisma.slide.findUniqueOrThrow).mockResolvedValue({
+      id: 'slide-1',
+      postId: 'post-1',
+      order: 0,
+      template: 'cover_cinematic',
+      cloudinaryPublicId: null,
+    } as never);
+
+    const response = await PATCH(buildRequest({ headline: 'Novo título', body: 'Novo corpo' }), {
+      params: Promise.resolve({ id: 'slide-1' }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(generateSlideHtml).not.toHaveBeenCalled();
+  });
 });
