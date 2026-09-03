@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/prisma', () => ({
-  prisma: { slide: { findUniqueOrThrow: vi.fn(), update: vi.fn() } },
+  prisma: { slide: { findUniqueOrThrow: vi.fn(), update: vi.fn(), count: vi.fn() } },
 }));
 vi.mock('@/lib/ai/generateSlideHtml', () => ({ generateSlideHtml: vi.fn() }));
 vi.mock('@/lib/render/renderSlideToImage', () => ({ renderSlideToImage: vi.fn() }));
@@ -20,10 +20,23 @@ function buildRequest(body: unknown): Request {
   });
 }
 
+const baseSlide = {
+  id: 'slide-1',
+  postId: 'post-1',
+  order: 2,
+  template: 'cover_cinematic',
+  cloudinaryPublicId: 'old-public-id',
+  sourceImageUrl: 'https://example.com/original-photo.jpg',
+  accentPhrase: 'não escala',
+  kicker: 'Radar',
+  sourceLabel: 'TechCrunch, 2026',
+};
+
 describe('PATCH /api/slides/[id]', () => {
   beforeEach(() => {
     vi.mocked(prisma.slide.findUniqueOrThrow).mockReset();
     vi.mocked(prisma.slide.update).mockReset();
+    vi.mocked(prisma.slide.count).mockReset();
     vi.mocked(generateSlideHtml).mockReset();
     vi.mocked(renderSlideToImage).mockReset();
     vi.mocked(uploadSlideImage).mockReset();
@@ -39,13 +52,8 @@ describe('PATCH /api/slides/[id]', () => {
   });
 
   test('regenerates HTML and image, deletes the old Cloudinary asset, and updates the slide', async () => {
-    vi.mocked(prisma.slide.findUniqueOrThrow).mockResolvedValue({
-      id: 'slide-1',
-      postId: 'post-1',
-      order: 0,
-      template: 'cover',
-      cloudinaryPublicId: 'old-public-id',
-    } as never);
+    vi.mocked(prisma.slide.findUniqueOrThrow).mockResolvedValue(baseSlide as never);
+    vi.mocked(prisma.slide.count).mockResolvedValue(9);
     vi.mocked(generateSlideHtml).mockResolvedValue('<html>novo</html>');
     vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
     vi.mocked(uploadSlideImage).mockResolvedValue({
@@ -58,11 +66,6 @@ describe('PATCH /api/slides/[id]', () => {
       params: Promise.resolve({ id: 'slide-1' }),
     });
 
-    expect(generateSlideHtml).toHaveBeenCalledWith({
-      template: 'cover',
-      headline: 'Novo título',
-      body: 'Novo corpo',
-    });
     expect(deleteSlideImage).toHaveBeenCalledWith('old-public-id');
     expect(prisma.slide.update).toHaveBeenCalledWith({
       where: { id: 'slide-1' },
@@ -75,20 +78,46 @@ describe('PATCH /api/slides/[id]', () => {
     expect(response.status).toBe(200);
   });
 
-  test('returns 400 when the slide uses a template editing does not support yet', async () => {
-    vi.mocked(prisma.slide.findUniqueOrThrow).mockResolvedValue({
-      id: 'slide-1',
-      postId: 'post-1',
-      order: 0,
-      template: 'cover_cinematic',
-      cloudinaryPublicId: null,
-    } as never);
+  test('preserves the original background photo, accentPhrase, kicker, sourceLabel and slide numbering on edit', async () => {
+    vi.mocked(prisma.slide.findUniqueOrThrow).mockResolvedValue(baseSlide as never);
+    vi.mocked(prisma.slide.count).mockResolvedValue(9);
+    vi.mocked(generateSlideHtml).mockResolvedValue('<html>novo</html>');
+    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
+    vi.mocked(uploadSlideImage).mockResolvedValue({ url: 'https://cloudinary.test/new.png', publicId: 'new-id' });
+    vi.mocked(prisma.slide.update).mockResolvedValue({ id: 'slide-1' } as never);
+
+    await PATCH(buildRequest({ headline: 'Novo título', body: 'Novo corpo' }), {
+      params: Promise.resolve({ id: 'slide-1' }),
+    });
+
+    expect(generateSlideHtml).toHaveBeenCalledWith(
+      {
+        template: 'cover_cinematic',
+        headline: 'Novo título',
+        body: 'Novo corpo',
+        accentPhrase: 'não escala',
+        kicker: 'Radar',
+        sourceLabel: 'TechCrunch, 2026',
+        slideNumber: 3,
+        totalSlides: 9,
+      },
+      'https://example.com/original-photo.jpg',
+    );
+  });
+
+  test('supports editing every slide template, including the new Fase 5 templates', async () => {
+    vi.mocked(prisma.slide.findUniqueOrThrow).mockResolvedValue({ ...baseSlide, template: 'risk' } as never);
+    vi.mocked(prisma.slide.count).mockResolvedValue(9);
+    vi.mocked(generateSlideHtml).mockResolvedValue('<html>novo</html>');
+    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
+    vi.mocked(uploadSlideImage).mockResolvedValue({ url: 'https://cloudinary.test/new.png', publicId: 'new-id' });
+    vi.mocked(prisma.slide.update).mockResolvedValue({ id: 'slide-1' } as never);
 
     const response = await PATCH(buildRequest({ headline: 'Novo título', body: 'Novo corpo' }), {
       params: Promise.resolve({ id: 'slide-1' }),
     });
 
-    expect(response.status).toBe(400);
-    expect(generateSlideHtml).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(generateSlideHtml).toHaveBeenCalledTimes(1);
   });
 });

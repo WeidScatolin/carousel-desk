@@ -1,35 +1,102 @@
 import { prisma } from '@/lib/prisma';
-import { writeCopy } from '../ai/writeCopy';
 import { generateSlideHtml } from '../ai/generateSlideHtml';
+import { writeCarouselCopy } from '../ai/writeCarouselCopy';
 import { resolveThemeImage } from '../images/resolveThemeImage';
 import { renderSlideToImage } from '../render/renderSlideToImage';
 import { uploadSlideImage } from '../storage/cloudinary';
 
-const TEMPLATES_WITH_IMAGE = new Set(['cover', 'evidence']);
-
 export async function generatePostFromTheme(themeId: string): Promise<string> {
-  const theme = await prisma.theme.findUniqueOrThrow({ where: { id: themeId } });
+  const theme = await prisma.theme.findUniqueOrThrow({
+    where: { id: themeId },
+    include: { contentBrief: { include: { leadMagnet: true } } },
+  });
+
+  if (!theme.contentBrief) {
+    throw new Error(
+      `generatePostFromTheme: theme ${themeId} has no ContentBrief — run discover (Fase 3 scoring) before generating a post`,
+    );
+  }
+
+  const brandStrategy = await prisma.brandStrategy.findFirst({ where: { active: true } });
+  if (!brandStrategy) {
+    throw new Error('generatePostFromTheme: no active BrandStrategy configured');
+  }
+
+  const { contentBrief } = theme;
 
   const post = await prisma.post.create({
-    data: { themeId: theme.id, status: 'generating' },
+    data: {
+      themeId: theme.id,
+      status: 'generating',
+      postGoal: contentBrief.postGoal,
+      contentPillar: contentBrief.contentPillar,
+      funnelStage: contentBrief.funnelStage,
+      leadMagnetId: contentBrief.leadMagnetId,
+    },
   });
 
   try {
-    const slidesCopy = await writeCopy({
-      headlineSuggestion: theme.headlineSuggestion,
-      summary: theme.summary,
-    });
+    const copy = await writeCarouselCopy(
+      {
+        headline: theme.headlineSuggestion,
+        articleBody: theme.articleBody ?? theme.summary,
+        articleFacts: theme.articleFacts,
+      },
+      {
+        contentPillar: contentBrief.contentPillar,
+        funnelStage: contentBrief.funnelStage,
+        postGoal: contentBrief.postGoal,
+        targetPain: contentBrief.targetPain,
+        businessApplication: contentBrief.businessApplication,
+        angle: contentBrief.angle,
+        hook: contentBrief.hook,
+        hookVariants: contentBrief.hookVariants,
+      },
+      {
+        positioning: brandStrategy.positioning,
+        targetAudience: brandStrategy.targetAudience,
+        promise: brandStrategy.promise,
+        tone: brandStrategy.tone,
+        instagramHandle: brandStrategy.instagramHandle,
+      },
+      contentBrief.leadMagnet
+        ? {
+            ctaKeyword: contentBrief.leadMagnet.ctaKeyword,
+            name: contentBrief.leadMagnet.name,
+            description: contentBrief.leadMagnet.description,
+            qualificationQuestion: contentBrief.leadMagnet.qualificationQuestion,
+          }
+        : null,
+    );
 
     const themeImage = await resolveThemeImage({
       headlineSuggestion: theme.headlineSuggestion,
       referenceImageUrls: theme.referenceImageUrls,
     });
 
-    for (const [index, slideCopy] of slidesCopy.entries()) {
-      const usesImage = TEMPLATES_WITH_IMAGE.has(slideCopy.template);
+    const totalSlides = copy.slides.length;
+
+    for (const [index, slideCopy] of copy.slides.entries()) {
+      // Each slide picks its own visual — only "main_image" slides get
+      // the theme's photo; diagram/mockup/screenshot/data/typography_only
+      // slides never do, so the same photo doesn't repeat on every slide.
+      const usesImage = slideCopy.visualType === 'main_image';
       const slideImage = usesImage ? themeImage : null;
 
-      const html = await generateSlideHtml(slideCopy, slideImage?.url);
+      const html = await generateSlideHtml(
+        {
+          template: slideCopy.template,
+          headline: slideCopy.headline,
+          body: slideCopy.body,
+          accentPhrase: slideCopy.accentPhrase,
+          kicker: slideCopy.kicker,
+          sourceLabel: slideCopy.sourceLabel,
+          slideNumber: index + 1,
+          totalSlides,
+          instagramHandle: brandStrategy.instagramHandle,
+        },
+        slideImage?.url,
+      );
       const imageBuffer = await renderSlideToImage(html);
       const publicId = `${post.id}-slide-${index}`;
       const uploaded = await uploadSlideImage(imageBuffer, publicId);
@@ -39,18 +106,28 @@ export async function generatePostFromTheme(themeId: string): Promise<string> {
           postId: post.id,
           order: index,
           template: slideCopy.template,
+          role: slideCopy.role,
           htmlContent: html,
           imageUrl: uploaded.url,
           cloudinaryPublicId: uploaded.publicId,
           imageSource: slideImage?.source ?? 'stock',
           sourceImageUrl: slideImage?.sourceImageUrl ?? null,
+          accentPhrase: slideCopy.accentPhrase,
+          kicker: slideCopy.kicker,
+          sourceLabel: slideCopy.sourceLabel,
+          visualType: slideCopy.visualType,
+          visualInstructions: slideCopy.visualInstructions,
         },
       });
     }
 
     const updated = await prisma.post.update({
       where: { id: post.id },
-      data: { status: 'pending_approval' },
+      data: {
+        status: 'pending_approval',
+        caption: copy.caption,
+        ctaKeyword: copy.ctaKeyword,
+      },
     });
 
     return updated.id;

@@ -2,19 +2,11 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { updateSlideSchema } from '@/lib/validation/kanbanActions';
 import { generateSlideHtml } from '@/lib/ai/generateSlideHtml';
-import type { SlideCopy } from '@/lib/ai/writeCopy';
 import { renderSlideToImage } from '@/lib/render/renderSlideToImage';
 import { uploadSlideImage, deleteSlideImage } from '@/lib/storage/cloudinary';
-import type { SlideTemplate } from '@/generated/prisma/client';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
-}
-
-const SUPPORTED_EDIT_TEMPLATES = new Set<SlideCopy['template']>(['cover', 'evidence', 'framework']);
-
-function isSupportedEditTemplate(template: SlideTemplate): template is SlideCopy['template'] {
-  return SUPPORTED_EDIT_TEMPLATES.has(template as SlideCopy['template']);
 }
 
 export async function PATCH(request: Request, { params }: RouteParams): Promise<NextResponse> {
@@ -27,19 +19,24 @@ export async function PATCH(request: Request, { params }: RouteParams): Promise<
   }
 
   const slide = await prisma.slide.findUniqueOrThrow({ where: { id } });
+  const totalSlides = await prisma.slide.count({ where: { postId: slide.postId } });
 
-  if (!isSupportedEditTemplate(slide.template)) {
-    return NextResponse.json(
-      { error: `Editing slides with template "${slide.template}" is not supported yet` },
-      { status: 400 },
-    );
-  }
-
-  const html = await generateSlideHtml({
-    template: slide.template,
-    headline: parsed.data.headline,
-    body: parsed.data.body,
-  });
+  // Regenerating a slide's text must not silently drop its composition:
+  // the original background photo (sourceImageUrl), accentPhrase, kicker,
+  // sourceLabel and its position in the carousel all carry over unchanged.
+  const html = await generateSlideHtml(
+    {
+      template: slide.template,
+      headline: parsed.data.headline,
+      body: parsed.data.body,
+      accentPhrase: slide.accentPhrase,
+      kicker: slide.kicker,
+      sourceLabel: slide.sourceLabel,
+      slideNumber: slide.order + 1,
+      totalSlides,
+    },
+    slide.sourceImageUrl,
+  );
   const imageBuffer = await renderSlideToImage(html);
 
   if (slide.cloudinaryPublicId) {
