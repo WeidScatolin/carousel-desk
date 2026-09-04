@@ -67,7 +67,7 @@ export function ThemeCard({ theme, column }: ThemeCardProps): JSX.Element {
         target="_blank"
         rel="noopener noreferrer"
         onClick={(event) => event.stopPropagation()}
-        className="text-xs font-medium text-carvao/50 underline hover:text-laranja"
+        className="text-xs font-medium text-carvao/50 underline hover:text-carvao"
       >
         Fonte ↗
       </a>

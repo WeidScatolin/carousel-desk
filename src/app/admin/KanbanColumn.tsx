@@ -32,7 +32,7 @@ export function KanbanColumn({ columnKey, title, board }: KanbanColumnProps): JS
 
   return (
     <div ref={setNodeRef} className="w-72 shrink-0 rounded-xl bg-carvao/5 p-3">
-      <h2 className="mb-3 font-heading text-sm font-bold uppercase tracking-wider text-carvao/70">{title}</h2>
+      <h2 className="brand-caps mb-3 font-heading text-sm font-bold text-carvao/70">{title}</h2>
       <div className="flex flex-col gap-2">
         {themes.map((theme) => (
           <ThemeCard key={theme.id} theme={theme} column={columnKey} />

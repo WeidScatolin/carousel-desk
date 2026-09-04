@@ -66,7 +66,7 @@ export function LeadMagnetsManager({ leadMagnets }: LeadMagnetsManagerProps): JS
                 {leadMagnet.name} <span className="text-xs font-normal text-carvao/50">({leadMagnet.ctaKeyword})</span>
               </p>
               <p className="text-sm text-carvao/60">{leadMagnet.description}</p>
-              <a href={leadMagnet.deliveryUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-carvao/50 underline hover:text-laranja">
+              <a href={leadMagnet.deliveryUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-carvao/50 underline hover:text-carvao">
                 {leadMagnet.deliveryUrl}
               </a>
             </div>
@@ -74,7 +74,7 @@ export function LeadMagnetsManager({ leadMagnets }: LeadMagnetsManagerProps): JS
               <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${leadMagnet.active ? 'bg-green-100 text-green-800' : 'bg-carvao/5 text-carvao/50'}`}>
                 {leadMagnet.active ? 'Ativo' : 'Inativo'}
               </span>
-              <button type="button" onClick={() => void toggleActive(leadMagnet)} className="text-xs font-medium text-carvao/60 underline hover:text-laranja">
+              <button type="button" onClick={() => void toggleActive(leadMagnet)} className="text-xs font-medium text-carvao/60 underline hover:text-carvao">
                 {leadMagnet.active ? 'Desativar' : 'Ativar'}
               </button>
               <button type="button" onClick={() => void remove(leadMagnet)} className="text-xs font-medium text-laranja underline">

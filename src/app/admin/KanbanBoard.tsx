@@ -109,7 +109,7 @@ export function KanbanBoard({ board }: KanbanBoardProps): JSX.Element {
               <li key={blocker}>{blocker}</li>
             ))}
           </ul>
-          <button type="button" className="mt-2 text-xs font-medium text-carvao/50 underline hover:text-laranja" onClick={() => setBlockers(null)}>
+          <button type="button" className="mt-2 text-xs font-medium text-carvao/50 underline hover:text-carvao" onClick={() => setBlockers(null)}>
             Fechar
           </button>
         </div>

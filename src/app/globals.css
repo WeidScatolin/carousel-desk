@@ -25,6 +25,11 @@ h1,
 h2,
 h3 {
   font-family: var(--font-heading);
+}
+
+/* Reserved for the handful of spots that should read as a loud brand
+   moment (nav wordmark, kanban column eyebrows) — not every heading. */
+.brand-caps {
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
 }

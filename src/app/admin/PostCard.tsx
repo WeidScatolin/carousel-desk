@@ -42,7 +42,7 @@ export function PostCard({ post, column }: PostCardProps): JSX.Element {
       {post.rejectionReason ? (
         <p className="mt-1 text-xs text-carvao/50">{post.rejectionReason}</p>
       ) : null}
-      <span className="mt-2 inline-block text-xs font-semibold text-laranja underline">Ver detalhes →</span>
+      <span className="mt-2 inline-block text-xs font-medium text-carvao/40">Ver detalhes →</span>
       {showDrawer ? <PostDrawer post={post} onClose={() => setShowDrawer(false)} /> : null}
     </div>
   );
