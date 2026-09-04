@@ -136,12 +136,12 @@ export function PostDrawer({ post, onClose }: PostDrawerProps): JSX.Element {
       <div className="flex h-full w-full max-w-xl flex-col overflow-y-auto bg-creme p-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-heading text-xl font-extrabold text-carvao">Detalhe do post</h2>
-          <button type="button" onClick={onClose} className="text-sm font-medium text-carvao/50 underline hover:text-laranja">
+          <button type="button" onClick={onClose} className="text-sm font-medium text-carvao/50 underline hover:text-carvao">
             Fechar
           </button>
         </div>
 
-        <a href={post.theme.sourceUrl} target="_blank" rel="noopener noreferrer" className="mb-2 text-xs font-medium text-carvao/50 underline hover:text-laranja">
+        <a href={post.theme.sourceUrl} target="_blank" rel="noopener noreferrer" className="mb-2 text-xs font-medium text-carvao/50 underline hover:text-carvao">
           Ver artigo-fonte ↗
         </a>
         {!post.theme.hasSufficientEvidence ? (
@@ -203,7 +203,7 @@ export function PostDrawer({ post, onClose }: PostDrawerProps): JSX.Element {
                 type="button"
                 disabled={regenerating}
                 onClick={() => void handleRegenerateAll()}
-                className="rounded border border-carvao/20 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-carvao transition hover:border-laranja hover:text-laranja disabled:opacity-40"
+                className="rounded border border-carvao/20 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-carvao transition hover:border-carvao/40 hover:bg-carvao/5 disabled:opacity-40"
               >
                 {regenerating ? 'Regenerando…' : 'Regenerar carrossel inteiro'}
               </button>

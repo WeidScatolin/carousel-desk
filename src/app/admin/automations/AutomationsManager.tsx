@@ -49,7 +49,7 @@ function DeliveryRow({ delivery, onReprocess }: { delivery: CommentDelivery; onR
         {delivery.lastError ? <span className="text-laranja"> ({delivery.lastError})</span> : null}
       </span>
       {delivery.status === 'FAILED' ? (
-        <button type="button" onClick={() => onReprocess(delivery.id)} className="font-medium text-carvao/60 underline hover:text-laranja">
+        <button type="button" onClick={() => onReprocess(delivery.id)} className="font-medium text-carvao/60 underline hover:text-carvao">
           Reprocessar
         </button>
       ) : null}
@@ -76,14 +76,14 @@ function DeliveriesPanel({ automationId }: { automationId: string }): JSX.Elemen
 
   if (deliveries === null) {
     return (
-      <button type="button" onClick={() => void load()} disabled={loading} className="text-xs font-medium text-carvao/60 underline hover:text-laranja">
+      <button type="button" onClick={() => void load()} disabled={loading} className="text-xs font-medium text-carvao/60 underline hover:text-carvao">
         {loading ? 'Carregando…' : 'Ver entregas'}
       </button>
     );
   }
 
   return (
-    <ul className="mt-2 flex flex-col gap-1 rounded bg-carvao/[0.03] px-2">
+    <ul className="mt-2 flex flex-col gap-1 border-t border-carvao/10 pt-2">
       {deliveries.length === 0 ? <li className="py-1.5 text-xs text-carvao/50">Nenhuma entrega ainda.</li> : null}
       {deliveries.map((delivery) => (
         <DeliveryRow key={delivery.id} delivery={delivery} onReprocess={reprocess} />
@@ -128,12 +128,12 @@ function AutomationCard({ automation, repliesEnabled }: { automation: Automation
       </div>
       <div className="flex gap-4 text-xs font-medium">
         {automation.status !== 'ACTIVE' ? (
-          <button type="button" onClick={() => void setStatus('ACTIVE')} className="text-carvao/60 underline hover:text-laranja">
+          <button type="button" onClick={() => void setStatus('ACTIVE')} className="text-carvao/60 underline hover:text-carvao">
             Ativar
           </button>
         ) : null}
         {automation.status === 'ACTIVE' ? (
-          <button type="button" onClick={() => void setStatus('PAUSED')} className="text-carvao/60 underline hover:text-laranja">
+          <button type="button" onClick={() => void setStatus('PAUSED')} className="text-carvao/60 underline hover:text-carvao">
             Pausar
           </button>
         ) : null}

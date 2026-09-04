@@ -9,7 +9,7 @@ export default async function LeadMagnetsPage(): Promise<JSX.Element> {
   return (
     <>
       <AdminNav />
-      <h1 className="p-5 pb-0 font-heading text-2xl font-extrabold text-carvao">Lead magnets</h1>
+      <h1 className="p-5 pb-0 font-heading text-xl font-bold text-carvao">Lead magnets</h1>
       <LeadMagnetsManager leadMagnets={leadMagnets} />
     </>
   );
