@@ -44,7 +44,11 @@ const slideItemSchema = z.object({
   role: z.enum(SLIDE_ROLES),
   template: z.enum(SLIDE_TEMPLATES),
   headline: z.string().trim().min(1),
-  body: z.string().trim().min(1),
+  // A cover slide's whole point is often just the headline — a smaller
+  // model correctly leaves body empty there rather than padding it with
+  // filler text. Unlike headline, there's no real slide type where an
+  // empty body is actually wrong.
+  body: z.string().trim(),
   accentPhrase: z.string().trim().min(1).nullable().optional(),
   kicker: z.string().trim().min(1).nullable().optional(),
   sourceLabel: z.string().trim().min(1).nullable().optional(),
@@ -243,6 +247,11 @@ function buildPrompt(
     'slides (array de objetos com role, template, headline, body,',
     'accentPhrase, kicker, sourceLabel, visualType, visualInstructions —',
     'os campos opcionais podem ser null quando não fizerem sentido).',
+    '',
+    `Cada slide.role precisa ser EXATAMENTE um destes valores (nunca outro, nunca vazio): ${SLIDE_ROLES.join(', ')}.`,
+    `Cada slide.template precisa ser EXATAMENTE um destes valores (nunca outro, nunca vazio): ${SLIDE_TEMPLATES.join(', ')}.`,
+    `slide.visualType precisa ser EXATAMENTE um destes valores: ${VISUAL_TYPES.join(', ')}.`,
+    'Nunca invente um valor fora dessas listas — se nenhum encaixar perfeitamente, escolha o mais próximo dentre os listados.',
   ].join('\n');
 }
 

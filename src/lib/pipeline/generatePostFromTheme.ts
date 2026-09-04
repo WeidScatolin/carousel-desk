@@ -34,9 +34,13 @@ export async function generatePostFromTheme(themeId: string): Promise<string> {
   try {
     const { caption, ctaKeyword } = await regeneratePostSlides(post.id, theme, contentBrief, brandStrategy);
 
+    // Stays "generating" — slides have htmlContent but no rendered image
+    // yet (see regeneratePostSlides). The render-pending-slides GitHub
+    // Action screenshots each one and flips this to pending_approval once
+    // every slide on this post has an image.
     const updated = await prisma.post.update({
       where: { id: post.id },
-      data: { status: 'pending_approval', caption, ctaKeyword },
+      data: { caption, ctaKeyword },
     });
 
     return updated.id;

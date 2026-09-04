@@ -87,8 +87,8 @@ describe('completeWithNvidia', () => {
     );
 
     const promise = completeWithNvidia('say hello');
-    const assertion = expect(promise).rejects.toThrow('timed out after 45000ms');
-    await vi.advanceTimersByTimeAsync(45_000);
+    const assertion = expect(promise).rejects.toThrow('timed out after 150000ms');
+    await vi.advanceTimersByTimeAsync(150_000);
 
     await assertion;
     vi.useRealTimers();

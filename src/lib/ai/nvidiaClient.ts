@@ -9,8 +9,12 @@
 // structured JSON response) take meaningfully longer to generate —
 // confirmed live: 20s was too short and this timeout itself was firing
 // mid-generation.
-const REQUEST_TIMEOUT_MS = 45_000;
-const MAX_COMPLETION_TOKENS = 2000;
+const REQUEST_TIMEOUT_MS = 150_000;
+// A full carousel copy response (several slides, each with headline,
+// body, kicker, visualInstructions, plus caption/hookVariants) needs
+// meaningfully more than a couple thousand tokens — 2000 was silently
+// truncating valid, in-progress JSON mid-array.
+const MAX_COMPLETION_TOKENS = 6000;
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 
 function getApiKey(): string {
