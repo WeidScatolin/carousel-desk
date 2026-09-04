@@ -3,14 +3,10 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('../ai/writeCarouselCopy', () => ({ writeCarouselCopy: vi.fn() }));
 vi.mock('../ai/generateSlideHtml', () => ({ generateSlideHtml: vi.fn() }));
 vi.mock('../images/resolveThemeImage', () => ({ resolveThemeImage: vi.fn() }));
-vi.mock('../render/renderSlideToImage', () => ({ renderSlideToImage: vi.fn() }));
-vi.mock('../storage/cloudinary', () => ({ uploadSlideImage: vi.fn() }));
 
 import { writeCarouselCopy, type CarouselCopy, type SlideCopyItem } from '../ai/writeCarouselCopy';
 import { generateSlideHtml } from '../ai/generateSlideHtml';
 import { resolveThemeImage } from '../images/resolveThemeImage';
-import { renderSlideToImage } from '../render/renderSlideToImage';
-import { uploadSlideImage } from '../storage/cloudinary';
 import { generatePostFromTheme } from './generatePostFromTheme';
 import { prisma } from '@/lib/prisma';
 
@@ -48,8 +44,6 @@ describe('generatePostFromTheme', () => {
     vi.mocked(writeCarouselCopy).mockReset();
     vi.mocked(generateSlideHtml).mockReset();
     vi.mocked(resolveThemeImage).mockReset().mockResolvedValue(null);
-    vi.mocked(renderSlideToImage).mockReset();
-    vi.mocked(uploadSlideImage).mockReset();
 
     const theme = await prisma.theme.create({
       data: {
@@ -126,14 +120,9 @@ describe('generatePostFromTheme', () => {
     await prisma.theme.delete({ where: { id: bareTheme.id } });
   });
 
-  test('creates a post with generated slides and marks it pending_approval', async () => {
+  test('creates a post with generated slides, still generating (rendering happens out-of-band)', async () => {
     vi.mocked(writeCarouselCopy).mockResolvedValue(validCopy);
     vi.mocked(generateSlideHtml).mockResolvedValue('<html><body>slide</body></html>');
-    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
-    vi.mocked(uploadSlideImage).mockResolvedValue({
-      url: 'https://cloudinary.test/img.png',
-      publicId: 'test-public-id',
-    });
 
     const postId = await generatePostFromTheme(themeId);
 
@@ -142,7 +131,7 @@ describe('generatePostFromTheme', () => {
       include: { slides: { orderBy: { order: 'asc' } } },
     });
 
-    expect(post.status).toBe('pending_approval');
+    expect(post.status).toBe('generating');
     expect(post.caption).toBe('Legenda de teste');
     expect(post.postGoal).toBe('follow');
     expect(post.contentPillar).toBe('radar');
@@ -151,7 +140,8 @@ describe('generatePostFromTheme', () => {
     expect(post.slides[0]?.role).toBe('cover');
     expect(post.slides[0]?.accentPhrase).toBe('não escala');
     expect(post.slides[0]?.kicker).toBe('Radar');
-    expect(post.slides[0]?.imageUrl).toBe('https://cloudinary.test/img.png');
+    expect(post.slides[0]?.htmlContent).toBe('<html><body>slide</body></html>');
+    expect(post.slides[0]?.imageUrl).toBeNull();
   });
 
   test('resolves the theme image only for slides whose visualType is main_image', async () => {
@@ -168,11 +158,6 @@ describe('generatePostFromTheme', () => {
       sourceImageUrl: 'https://example.com/photo.jpg',
     });
     vi.mocked(generateSlideHtml).mockResolvedValue('<html><body>slide</body></html>');
-    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
-    vi.mocked(uploadSlideImage).mockResolvedValue({
-      url: 'https://cloudinary.test/img.png',
-      publicId: 'test-public-id',
-    });
 
     const postId = await generatePostFromTheme(themeId);
 
@@ -205,8 +190,6 @@ describe('generatePostFromTheme', () => {
       slides: [...validCopy.slides, buildSlide({ role: 'cta', template: 'cta' })],
     });
     vi.mocked(generateSlideHtml).mockResolvedValue('<html><body>slide</body></html>');
-    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
-    vi.mocked(uploadSlideImage).mockResolvedValue({ url: 'https://cloudinary.test/img.png', publicId: 'id' });
 
     const postId = await generatePostFromTheme(themeId);
 
@@ -222,8 +205,6 @@ describe('generatePostFromTheme', () => {
       slides: [...validCopy.slides, buildSlide({ role: 'cta', template: 'cta' })],
     });
     vi.mocked(generateSlideHtml).mockResolvedValue('<html><body>slide</body></html>');
-    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
-    vi.mocked(uploadSlideImage).mockResolvedValue({ url: 'https://cloudinary.test/img.png', publicId: 'id' });
 
     await expect(generatePostFromTheme(themeId)).rejects.toThrow('has no ctaKeyword');
 

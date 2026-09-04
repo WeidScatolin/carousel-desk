@@ -3,8 +3,6 @@ import type { BrandStrategy, ContentBrief, LeadMagnet, Theme } from '@/generated
 import { generateSlideHtml } from '../ai/generateSlideHtml';
 import { writeCarouselCopy } from '../ai/writeCarouselCopy';
 import { resolveThemeImage } from '../images/resolveThemeImage';
-import { renderSlideToImage } from '../render/renderSlideToImage';
-import { uploadSlideImage } from '../storage/cloudinary';
 
 export interface ThemeForGeneration
   extends Pick<Theme, 'headlineSuggestion' | 'summary' | 'articleBody' | 'articleFacts' | 'referenceImageUrls'> {}
@@ -94,10 +92,15 @@ export async function regeneratePostSlides(
       },
       slideImage?.url,
     );
-    const imageBuffer = await renderSlideToImage(html);
-    const publicId = `${postId}-slide-${index}-${Date.now()}`;
-    const uploaded = await uploadSlideImage(imageBuffer, publicId);
 
+    // Rendering (Playwright screenshot) and the Cloudinary upload that
+    // follows it don't happen here — a Vercel serverless function is a
+    // poor place to run a real headless Chromium (@sparticuz/chromium's
+    // constrained build has repeatedly failed to reliably screenshot in
+    // production). htmlContent already has fonts embedded as base64
+    // (see loadFonts.ts, used inside generateSlideHtml), so it's fully
+    // self-contained; the render-pending-slides GitHub Action screenshots
+    // it with a full, ordinary Chromium and fills in imageUrl afterwards.
     await prisma.slide.create({
       data: {
         postId,
@@ -107,8 +110,8 @@ export async function regeneratePostSlides(
         headline: slideCopy.headline,
         body: slideCopy.body,
         htmlContent: html,
-        imageUrl: uploaded.url,
-        cloudinaryPublicId: uploaded.publicId,
+        imageUrl: null,
+        cloudinaryPublicId: null,
         imageSource: slideImage?.source ?? 'stock',
         sourceImageUrl: slideImage?.sourceImageUrl ?? null,
         accentPhrase: slideCopy.accentPhrase,

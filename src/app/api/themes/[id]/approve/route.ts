@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generatePostFromTheme } from '@/lib/pipeline/generatePostFromTheme';
 
+// Generous budget: an AI copywriting call (up to 90s) followed by
+// per-slide Playwright rendering + Cloudinary uploads for several slides.
+export const maxDuration = 180;
+
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
