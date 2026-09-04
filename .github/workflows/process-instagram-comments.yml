@@ -1,0 +1,23 @@
+name: Process Instagram comments (comment-to-DM)
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    # The var gate applies only to the scheduled trigger — workflow_dispatch
+    # stays available as an explicit manual override for testing.
+    if: github.event_name == 'workflow_dispatch' || vars.INSTAGRAM_COMMENT_AUTOMATION_ENABLED == 'true'
+    steps:
+      - name: Call comment processing endpoint
+        env:
+          PUBLISH_API_TOKEN: ${{ secrets.PUBLISH_API_TOKEN }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          curl --fail-with-body --show-error --silent \
+            -X POST \
+            -H "Authorization: Bearer $PUBLISH_API_TOKEN" \
+            "$APP_URL/api/pipeline/process-instagram-comments"

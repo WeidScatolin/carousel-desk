@@ -21,7 +21,7 @@ export async function PATCH(request: Request, { params }: RouteParams): Promise<
 
 export async function DELETE(_request: Request, { params }: RouteParams): Promise<NextResponse> {
   const { id } = await params;
-  // Post/ContentBrief/LeadMagnetCampaign all reference this via ON DELETE
+  // Post/ContentBrief all reference this via ON DELETE
   // SET NULL, so deleting a lead magnet in use just detaches it from
   // whatever already referenced it rather than failing.
   await prisma.leadMagnet.delete({ where: { id } });

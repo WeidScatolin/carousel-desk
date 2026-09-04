@@ -1,15 +1,7 @@
-const GRAPH_API_BASE_URL = 'https://graph.instagram.com/v21.0';
+import { getGraphApiBaseUrl, getInstagramAccessToken } from './graphApiConfig';
 
 interface GraphIdResponse {
   id: string;
-}
-
-function getAccessToken(): string {
-  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
-  if (!token) {
-    throw new Error('publishCarousel: INSTAGRAM_ACCESS_TOKEN is not configured');
-  }
-  return token;
 }
 
 function parseId(payload: unknown, operation: string): GraphIdResponse {
@@ -28,7 +20,7 @@ async function postForm(
   form: URLSearchParams,
   operation: string
 ): Promise<GraphIdResponse> {
-  const response = await fetch(`${GRAPH_API_BASE_URL}/${path}`, {
+  const response = await fetch(`${getGraphApiBaseUrl()}/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form,
@@ -66,7 +58,7 @@ export async function publishCarousel(post: {
   slides: { imageUrl: string }[];
   caption?: string;
 }): Promise<string> {
-  const token = getAccessToken();
+  const token = getInstagramAccessToken();
   const children: string[] = [];
   for (const slide of post.slides) {
     children.push(

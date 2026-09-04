@@ -5,7 +5,7 @@ const LINKS = [
   { href: '/admin', label: 'Quadro' },
   { href: '/admin/strategy', label: 'Estratégia da marca' },
   { href: '/admin/lead-magnets', label: 'Lead magnets' },
-  { href: '/admin/campaigns', label: 'Campanhas' },
+  { href: '/admin/automations', label: 'Automações' },
 ];
 
 export function AdminNav(): JSX.Element {

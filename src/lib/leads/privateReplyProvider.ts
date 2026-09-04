@@ -17,23 +17,7 @@ export class MockPrivateReplyProvider implements InstagramPrivateReplyProvider {
   }
 }
 
-const GRAPH_API_BASE_URL = 'https://graph.instagram.com/v21.0';
-
-function getAccessToken(): string {
-  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
-  if (!token) {
-    throw new Error('MetaPrivateReplyProvider: INSTAGRAM_ACCESS_TOKEN is not configured');
-  }
-  return token;
-}
-
-function getBusinessAccountId(): string {
-  const accountId = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
-  if (!accountId) {
-    throw new Error('MetaPrivateReplyProvider: INSTAGRAM_BUSINESS_ACCOUNT_ID is not configured');
-  }
-  return accountId;
-}
+import { getGraphApiBaseUrl, getInstagramAccessToken, getInstagramBusinessAccountId, isPrivateRepliesEnabled } from '../instagram/graphApiConfig';
 
 // UNVERIFIED against a live Meta app — implemented from current published
 // docs, researched in-session (2026-09-03):
@@ -56,11 +40,11 @@ export class MetaPrivateReplyProvider implements InstagramPrivateReplyProvider {
     externalMessageId?: string;
     error?: string;
   }> {
-    const token = getAccessToken();
-    const accountId = getBusinessAccountId();
+    const token = getInstagramAccessToken();
+    const accountId = getInstagramBusinessAccountId();
 
     try {
-      const response = await fetch(`${GRAPH_API_BASE_URL}/${accountId}/messages`, {
+      const response = await fetch(`${getGraphApiBaseUrl()}/${accountId}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -97,7 +81,5 @@ export class MetaPrivateReplyProvider implements InstagramPrivateReplyProvider {
 }
 
 export function getPrivateReplyProvider(): InstagramPrivateReplyProvider {
-  return process.env.INSTAGRAM_PRIVATE_REPLIES_ENABLED === 'true'
-    ? new MetaPrivateReplyProvider()
-    : new MockPrivateReplyProvider();
+  return isPrivateRepliesEnabled() ? new MetaPrivateReplyProvider() : new MockPrivateReplyProvider();
 }

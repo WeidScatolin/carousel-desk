@@ -21,7 +21,6 @@ describe('POST /api/pipeline/publish', () => {
 
   afterEach(async () => {
     await prisma.slide.deleteMany({ where: { post: { themeId: { in: themeIds } } } });
-    await prisma.leadMagnetCampaign.deleteMany({ where: { post: { themeId: { in: themeIds } } } });
     await prisma.post.deleteMany({ where: { themeId: { in: themeIds } } });
     await prisma.theme.deleteMany({ where: { id: { in: themeIds } } });
     themeIds.splice(0, themeIds.length);
@@ -152,49 +151,5 @@ describe('POST /api/pipeline/publish', () => {
     expect(publishCarousel).toHaveBeenCalledWith(
       expect.objectContaining({ caption: 'Comente "MAPA" e eu envio no seu Direct.' }),
     );
-  });
-
-  test('links a DRAFT campaign to the published media and activates it', async () => {
-    const post = await createScheduledPost();
-    await prisma.leadMagnetCampaign.create({
-      data: {
-        carouselId: post.id,
-        name: 'Campanha MAPA',
-        keyword: 'MAPA',
-        assetName: 'Mapa de Oportunidades',
-        assetUrl: 'https://example.com/mapa.pdf',
-        deliveryMessage: 'Aqui está o mapa.',
-        status: 'DRAFT',
-      },
-    });
-    vi.mocked(publishCarousel).mockResolvedValue('instagram-post-1');
-
-    await POST(authorizedRequest());
-
-    const campaign = await prisma.leadMagnetCampaign.findUniqueOrThrow({ where: { carouselId: post.id } });
-    expect(campaign.instagramMediaId).toBe('instagram-post-1');
-    expect(campaign.status).toBe('ACTIVE');
-  });
-
-  test('links the published media without reactivating a campaign the user already paused', async () => {
-    const post = await createScheduledPost();
-    await prisma.leadMagnetCampaign.create({
-      data: {
-        carouselId: post.id,
-        name: 'Campanha MAPA',
-        keyword: 'MAPA',
-        assetName: 'Mapa de Oportunidades',
-        assetUrl: 'https://example.com/mapa.pdf',
-        deliveryMessage: 'Aqui está o mapa.',
-        status: 'PAUSED',
-      },
-    });
-    vi.mocked(publishCarousel).mockResolvedValue('instagram-post-1');
-
-    await POST(authorizedRequest());
-
-    const campaign = await prisma.leadMagnetCampaign.findUniqueOrThrow({ where: { carouselId: post.id } });
-    expect(campaign.instagramMediaId).toBe('instagram-post-1');
-    expect(campaign.status).toBe('PAUSED');
   });
 });

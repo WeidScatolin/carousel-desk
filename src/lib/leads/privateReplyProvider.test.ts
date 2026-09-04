@@ -65,7 +65,7 @@ describe('MetaPrivateReplyProvider', () => {
     const result = await provider.sendPrivateReply({ commentId: 'comment-1', message: 'Aqui está o material.' });
 
     expect(fetch).toHaveBeenCalledWith(
-      'https://graph.instagram.com/v21.0/ig-user-1/messages',
+      'https://graph.instagram.com/v26.0/ig-user-1/messages',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({

@@ -39,7 +39,7 @@ describe('publishCarousel', () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      'https://graph.instagram.com/v21.0/ig-user-1/media',
+      'https://graph.instagram.com/v26.0/ig-user-1/media',
       expect.objectContaining({
         method: 'POST',
         body: new URLSearchParams({
@@ -51,7 +51,7 @@ describe('publishCarousel', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      'https://graph.instagram.com/v21.0/ig-user-1/media',
+      'https://graph.instagram.com/v26.0/ig-user-1/media',
       expect.objectContaining({
         method: 'POST',
         body: new URLSearchParams({
@@ -63,7 +63,7 @@ describe('publishCarousel', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      'https://graph.instagram.com/v21.0/ig-user-1/media',
+      'https://graph.instagram.com/v26.0/ig-user-1/media',
       expect.objectContaining({
         method: 'POST',
         body: new URLSearchParams({
@@ -75,7 +75,7 @@ describe('publishCarousel', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
-      'https://graph.instagram.com/v21.0/ig-user-1/media_publish',
+      'https://graph.instagram.com/v26.0/ig-user-1/media_publish',
       expect.objectContaining({
         method: 'POST',
         body: new URLSearchParams({
@@ -102,7 +102,7 @@ describe('publishCarousel', () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      'https://graph.instagram.com/v21.0/ig-user-1/media',
+      'https://graph.instagram.com/v26.0/ig-user-1/media',
       expect.objectContaining({
         body: new URLSearchParams({
           image_url: 'https://cdn.test/slide-1.png',
@@ -113,7 +113,7 @@ describe('publishCarousel', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      'https://graph.instagram.com/v21.0/ig-user-1/media',
+      'https://graph.instagram.com/v26.0/ig-user-1/media',
       expect.objectContaining({
         body: new URLSearchParams({
           media_type: 'CAROUSEL',
@@ -125,7 +125,7 @@ describe('publishCarousel', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      'https://graph.instagram.com/v21.0/ig-user-1/media_publish',
+      'https://graph.instagram.com/v26.0/ig-user-1/media_publish',
       expect.objectContaining({
         body: new URLSearchParams({ creation_id: 'carousel-1', access_token: 'test-access-token' }),
       }),

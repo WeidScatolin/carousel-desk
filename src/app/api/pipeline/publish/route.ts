@@ -1,7 +1,6 @@
 import { publishCarousel } from '@/lib/instagram/publishCarousel';
 import { prisma } from '@/lib/prisma';
 import { deleteSlideImage } from '@/lib/storage/cloudinary';
-import type { CampaignStatus } from '@/generated/prisma/client';
 
 interface PublishResult { claimed: boolean; published: boolean; }
 interface ReadySlide { id: string; imageUrl: string; cloudinaryPublicId: string; }
@@ -50,19 +49,6 @@ interface PublishablePost {
   id: string;
   caption: string | null;
   slides: ReadonlyArray<{ id: string; imageUrl: string | null; cloudinaryPublicId: string | null }>;
-  leadMagnetCampaign: { id: string; status: CampaignStatus } | null;
-}
-
-async function linkCampaignToPublishedMedia(campaign: { id: string; status: CampaignStatus }, instagramMediaId: string): Promise<void> {
-  await prisma.leadMagnetCampaign.update({
-    where: { id: campaign.id },
-    data: {
-      instagramMediaId,
-      // A campaign the user already paused, finished, or activated by
-      // hand keeps that status — publish only auto-activates a fresh DRAFT.
-      status: campaign.status === 'DRAFT' ? 'ACTIVE' : campaign.status,
-    },
-  });
 }
 
 async function processPost(post: PublishablePost): Promise<PublishResult> {
@@ -88,9 +74,10 @@ async function processPost(post: PublishablePost): Promise<PublishResult> {
     where: { id: post.id },
     data: { status: 'published', publishedAt: new Date(), instagramPostId, errorMessage: null },
   });
-  if (post.leadMagnetCampaign) {
-    await linkCampaignToPublishedMedia(post.leadMagnetCampaign, instagramPostId);
-  }
+  // A CommentAutomation is not auto-created/linked here — per the
+  // comment-polling design, automations are configured manually in
+  // /admin/automations against an already-published post (instagramPostId
+  // only exists once that's true).
   const cleanupFailures = await cleanPublishedSlides(slides);
   if (cleanupFailures.length > 0) {
     await prisma.post.update({ where: { id: post.id }, data: { errorMessage: cleanupFailures.join('; ') } });
@@ -106,7 +93,7 @@ export async function POST(request: Request): Promise<Response> {
   }
   const posts = await prisma.post.findMany({
     where: { status: 'scheduled', scheduledAt: { lte: new Date() } },
-    include: { slides: { orderBy: { order: 'asc' } }, leadMagnetCampaign: true },
+    include: { slides: { orderBy: { order: 'asc' } } },
   });
   const results: PublishResult[] = [];
   for (const post of posts) results.push(await processPost(post));
