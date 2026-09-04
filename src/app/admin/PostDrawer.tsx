@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type JSX } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import type { PostWithSlides } from '@/lib/data/posts';
 import type { Slide, LeadMagnet } from '@/generated/prisma/client';
@@ -191,9 +192,12 @@ export function PostDrawer({ post, onClose }: PostDrawerProps): JSX.Element {
 
   const canRegenerate = post.status !== 'scheduled' && post.status !== 'published';
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-carvao/70 p-4" role="dialog" aria-modal="true" aria-label="Detalhe do post">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:flex-row">
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-carvao/70 p-4" role="dialog" aria-modal="true" aria-label="Detalhe do post" onClick={onClose}>
+      <div
+        onClick={(event) => event.stopPropagation()}
+        className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:flex-row"
+      >
         <InstagramCarousel slides={post.slides} selectedIndex={selectedIndex} onSelect={setSelectedIndex} />
 
         <div className="flex flex-1 flex-col overflow-y-auto p-5">
@@ -268,6 +272,7 @@ export function PostDrawer({ post, onClose }: PostDrawerProps): JSX.Element {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
