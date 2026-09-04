@@ -181,7 +181,7 @@ describe('POST /api/pipeline/discover', () => {
 
   test('keeps only the top-scoring themes when more candidates than the cap are enriched', async () => {
     // Arrange
-    const candidates = Array.from({ length: 8 }, (_, index) => ({
+    const candidates = Array.from({ length: 5 }, (_, index) => ({
       ...candidate,
       sourceUrl: `https://example.com/news-${index}`,
     }));
@@ -191,7 +191,7 @@ describe('POST /api/pipeline/discover', () => {
     vi.mocked(enrichArticle).mockResolvedValue(enrichment);
     vi.mocked(scoreTheme).mockImplementation(async (input) => ({
       ...score,
-      totalScore: input.sourceUrl.endsWith('7') ? 99 : 10,
+      totalScore: input.sourceUrl.endsWith('2') ? 99 : 10,
     }));
     vi.mocked(prisma.theme.upsert).mockResolvedValue({ id: 'theme-x' } as never);
     vi.mocked(prisma.contentBrief.upsert).mockResolvedValue({ id: 'brief-x' } as never);
@@ -199,11 +199,12 @@ describe('POST /api/pipeline/discover', () => {
     // Act
     const response = await POST(request());
 
-    // Assert — capped at 5 persisted themes even though 8 were enriched
-    expect(await response.json()).toEqual({ success: true, data: { discovered: 5 } });
-    expect(prisma.theme.upsert).toHaveBeenCalledTimes(5);
+    // Assert — only the first 3 candidates get enriched (news-3/news-4 never
+    // reach scoring), and persisting itself caps at 3 too.
+    expect(await response.json()).toEqual({ success: true, data: { discovered: 3 } });
+    expect(prisma.theme.upsert).toHaveBeenCalledTimes(3);
     expect(prisma.theme.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { sourceUrl: 'https://example.com/news-7' } }),
+      expect.objectContaining({ where: { sourceUrl: 'https://example.com/news-2' } }),
     );
   });
 

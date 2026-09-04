@@ -4,11 +4,19 @@ import { prisma } from '@/lib/prisma';
 import { enrichArticle } from '@/lib/scraping/enrichArticle';
 import { scrapeThemes, type ScrapedCandidate } from '@/lib/scraping/scrapeThemes';
 
+// Requests the platform's max allowed duration for this function. The
+// real bottleneck this route hit wasn't NVIDIA rejecting concurrent
+// connections — it was the whole invocation running past the default
+// limit while working through several candidates' scraping + scoring.
+export const maxDuration = 60;
+
 // Enrichment opens a real HTTP request per candidate, so only a bounded
-// slice of the listing gets that treatment.
-const MAX_CANDIDATES_TO_ENRICH = 8;
+// slice of the listing gets that treatment. Kept small — each one also
+// pays for a full scoreTheme AI call, and the whole run has one shared
+// time budget (see maxDuration above).
+const MAX_CANDIDATES_TO_ENRICH = 3;
 // How many scored themes get persisted as pending suggestions per run.
-const MAX_THEMES_TO_DISCOVER = 5;
+const MAX_THEMES_TO_DISCOVER = 3;
 
 function authorized(request: Request): boolean {
   const expected = process.env.DISCOVERY_API_TOKEN;
@@ -82,25 +90,21 @@ export async function POST(request: Request): Promise<Response> {
       description: magnet.description,
     }));
 
-    // Sequential, not Promise.all: firing all candidates at NVIDIA
-    // concurrently reliably triggers a connection error on this tier —
-    // there is no per-run time pressure here (this is a cron-triggered
-    // batch job, nothing is waiting on the response), so one at a time
-    // is the simple, robust choice.
-    const scored: { item: EnrichedCandidate; score: Awaited<ReturnType<typeof scoreTheme>> }[] = [];
-    for (const item of enriched) {
-      const score = await scoreTheme(
-        {
-          sourceUrl: item.candidate.sourceUrl,
-          headline: item.candidate.headline,
-          articleBody: item.articleBody,
-          articleFacts: item.articleFacts,
-        },
-        brandStrategy,
-        leadMagnetOptions,
-      );
-      scored.push({ item, score });
-    }
+    const scored = await Promise.all(
+      enriched.map(async (item) => ({
+        item,
+        score: await scoreTheme(
+          {
+            sourceUrl: item.candidate.sourceUrl,
+            headline: item.candidate.headline,
+            articleBody: item.articleBody,
+            articleFacts: item.articleFacts,
+          },
+          brandStrategy,
+          leadMagnetOptions,
+        ),
+      })),
+    );
 
     const topThemes = scored
       .sort((a, b) => b.score.totalScore - a.score.totalScore)
