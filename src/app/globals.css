@@ -1,1 +1,30 @@
 @import "tailwindcss";
+@import "@fontsource/barlow-condensed/600.css";
+@import "@fontsource/barlow-condensed/800.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+
+/* Brand tokens — docs/brand/DESIGN.md, extended to the /admin dashboard. */
+@theme {
+  --color-carvao: #0a0a0a;
+  --color-creme: #f2f0e8;
+  --color-laranja: #ff3b0a;
+  --color-roxopreto: #11101d;
+  --font-heading: "Barlow Condensed", sans-serif;
+  --font-body: "Inter", sans-serif;
+}
+
+body {
+  background-color: var(--color-creme);
+  color: var(--color-carvao);
+  font-family: var(--font-body);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}

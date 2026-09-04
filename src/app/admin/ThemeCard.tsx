@@ -38,41 +38,41 @@ export function ThemeCard({ theme, column }: ThemeCardProps): JSX.Element {
       style={{ transform: CSS.Translate.toString(transform) }}
       {...listeners}
       {...attributes}
-      className="rounded border bg-white p-3"
+      className="rounded-lg border border-carvao/10 bg-white p-3 shadow-sm"
     >
       <div className="mb-1 flex items-center justify-between gap-2">
-        <p className="font-semibold">{theme.headlineSuggestion}</p>
+        <p className="font-semibold text-carvao">{theme.headlineSuggestion}</p>
         {brief ? (
-          <span className="shrink-0 rounded-full bg-neutral-900 px-2 py-0.5 text-xs font-bold text-white">
+          <span className="shrink-0 rounded-full bg-carvao px-2 py-0.5 text-xs font-bold text-creme">
             {brief.totalScore}
           </span>
         ) : null}
       </div>
       {brief ? (
         <div className="mb-2 flex flex-wrap gap-1">
-          <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
+          <span className="rounded bg-carvao/5 px-2 py-0.5 text-xs font-medium text-carvao/70">
             {PILLAR_LABELS[brief.contentPillar] ?? brief.contentPillar}
           </span>
-          <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
+          <span className="rounded bg-carvao/5 px-2 py-0.5 text-xs font-medium text-carvao/70">
             {GOAL_LABELS[brief.postGoal] ?? brief.postGoal}
           </span>
         </div>
       ) : null}
-      {brief ? <p className="mb-2 text-xs text-neutral-600">{brief.strategicRationale}</p> : null}
+      {brief ? <p className="mb-2 text-xs text-carvao/60">{brief.strategicRationale}</p> : null}
       {!theme.hasSufficientEvidence ? (
-        <p className="mb-2 text-xs font-semibold text-amber-700">⚠ Evidência insuficiente no artigo-fonte</p>
+        <p className="mb-2 text-xs font-semibold text-laranja">⚠ Evidência insuficiente no artigo-fonte</p>
       ) : null}
       <a
         href={theme.sourceUrl}
         target="_blank"
         rel="noopener noreferrer"
         onClick={(event) => event.stopPropagation()}
-        className="text-xs text-neutral-500 underline"
+        className="text-xs font-medium text-carvao/50 underline hover:text-laranja"
       >
         Fonte ↗
       </a>
       {theme.rejectionReason ? (
-        <p className="mt-1 text-xs text-neutral-500">{theme.rejectionReason}</p>
+        <p className="mt-1 text-xs text-carvao/50">{theme.rejectionReason}</p>
       ) : null}
     </div>
   );

@@ -27,33 +27,33 @@ export function ActionDialog({ kind, title, onConfirm, onCancel }: ActionDialogP
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div role="dialog" aria-modal="true" aria-label={title} className="w-96 rounded bg-white p-4 shadow-lg">
-        <h2 className="mb-3 text-sm font-bold text-neutral-900">{title}</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-carvao/60">
+      <div role="dialog" aria-modal="true" aria-label={title} className="w-96 rounded-lg bg-creme p-5 shadow-xl">
+        <h2 className="mb-3 font-heading text-base font-bold text-carvao">{title}</h2>
         {kind === 'schedule' ? (
           <input
             type="datetime-local"
             aria-label="Data e hora do agendamento"
-            className="mb-4 w-full rounded border p-2 text-sm"
+            className="mb-4 w-full rounded border border-carvao/15 bg-white p-2 text-sm text-carvao focus:border-laranja focus:outline-none"
             value={value}
             onChange={(event) => setValue(event.target.value)}
           />
         ) : (
           <textarea
             aria-label="Motivo"
-            className="mb-4 w-full rounded border p-2 text-sm"
+            className="mb-4 w-full rounded border border-carvao/15 bg-white p-2 text-sm text-carvao focus:border-laranja focus:outline-none"
             rows={3}
             value={value}
             onChange={(event) => setValue(event.target.value)}
           />
         )}
         <div className="flex justify-end gap-2">
-          <button type="button" className="rounded px-3 py-1 text-sm text-neutral-600" onClick={onCancel}>
+          <button type="button" className="rounded px-3 py-2 text-sm font-medium text-carvao/60 hover:text-carvao" onClick={onCancel}>
             Cancelar
           </button>
           <button
             type="button"
-            className="rounded bg-neutral-900 px-3 py-1 text-sm text-white disabled:opacity-40"
+            className="rounded bg-carvao px-4 py-2 text-sm font-semibold uppercase tracking-wide text-creme transition hover:bg-laranja disabled:opacity-40"
             disabled={!value.trim()}
             onClick={handleConfirm}
           >

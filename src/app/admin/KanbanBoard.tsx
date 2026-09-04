@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type JSX } from 'react';
-import { DndContext, type DragEndEvent } from '@dnd-kit/core';
+import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { useRouter } from 'next/navigation';
 import { COLUMN_LABELS, COLUMN_ORDER, resolveDragAction, type ColumnKey, type DragAction } from '@/lib/kanban/columns';
 import type { KanbanBoard as KanbanBoardData } from '@/lib/data/kanban';
@@ -33,6 +33,12 @@ export function KanbanBoard({ board }: KanbanBoardProps): JSX.Element {
   const router = useRouter();
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [blockers, setBlockers] = useState<string[] | null>(null);
+  // Without a minimum drag distance, dnd-kit's PointerSensor treats any
+  // pointerdown+move as a drag start — and the browser then suppresses
+  // the native click event that would otherwise follow, so clicking a
+  // card (even with zero visible movement, e.g. a trackpad) silently
+  // does nothing.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   function handleDragEnd(event: DragEndEvent): void {
     const from = event.active.data.current?.column as ColumnKey | undefined;
@@ -80,7 +86,7 @@ export function KanbanBoard({ board }: KanbanBoardProps): JSX.Element {
 
   return (
     <>
-      <DndContext onDragEnd={handleDragEnd}>
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
         <div className="flex gap-4 overflow-x-auto p-4">
           {COLUMN_ORDER.map((key) => (
             <KanbanColumn key={key} columnKey={key} title={COLUMN_LABELS[key]} board={board} />
@@ -96,14 +102,14 @@ export function KanbanBoard({ board }: KanbanBoardProps): JSX.Element {
         />
       ) : null}
       {blockers ? (
-        <div role="alert" className="fixed bottom-4 right-4 z-50 max-w-sm rounded bg-red-50 p-4 text-sm text-red-800 shadow-lg">
-          <p className="mb-2 font-bold">Não foi possível concluir:</p>
-          <ul className="list-disc pl-4">
+        <div role="alert" className="fixed bottom-4 right-4 z-50 max-w-sm rounded-lg border border-laranja/20 bg-white p-4 text-sm text-carvao shadow-xl">
+          <p className="mb-2 font-heading font-bold uppercase text-laranja">Não foi possível concluir</p>
+          <ul className="list-disc pl-4 text-carvao/80">
             {blockers.map((blocker) => (
               <li key={blocker}>{blocker}</li>
             ))}
           </ul>
-          <button type="button" className="mt-2 text-xs underline" onClick={() => setBlockers(null)}>
+          <button type="button" className="mt-2 text-xs font-medium text-carvao/50 underline hover:text-laranja" onClick={() => setBlockers(null)}>
             Fechar
           </button>
         </div>

@@ -10,12 +10,21 @@ const LINKS = [
 
 export function AdminNav(): JSX.Element {
   return (
-    <nav className="flex gap-4 border-b bg-white p-3 text-sm">
-      {LINKS.map((link) => (
-        <Link key={link.href} href={link.href} className="text-neutral-700 hover:underline">
-          {link.label}
-        </Link>
-      ))}
+    <nav className="flex items-center gap-6 border-b border-carvao/10 bg-carvao px-5 py-3">
+      <span className="font-heading text-lg font-extrabold uppercase tracking-wide text-creme">
+        carousel<span className="text-laranja">.</span>desk
+      </span>
+      <div className="flex gap-5">
+        {LINKS.map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className="text-sm font-medium text-creme/70 transition hover:text-laranja"
+          >
+            {link.label}
+          </Link>
+        ))}
+      </div>
     </nav>
   );
 }
