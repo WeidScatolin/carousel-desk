@@ -136,4 +136,43 @@ describe('PostDrawer', () => {
 
     expect(onClose).toHaveBeenCalled();
   });
+
+  test('navigates the carousel with the next/prev arrows, like an Instagram post', async () => {
+    const user = userEvent.setup();
+    const post = buildPost({
+      slides: [
+        {
+          id: 'slide-1',
+          postId: 'post-1',
+          order: 0,
+          headline: 'Slide um',
+          body: 'Corpo um',
+          imageUrl: 'https://cdn.test/slide-1.png',
+          accentPhrase: null,
+        } as never,
+        {
+          id: 'slide-2',
+          postId: 'post-1',
+          order: 1,
+          headline: 'Slide dois',
+          body: 'Corpo dois',
+          imageUrl: 'https://cdn.test/slide-2.png',
+          accentPhrase: null,
+        } as never,
+      ],
+    });
+    render(<PostDrawer post={post} onClose={vi.fn()} />);
+
+    expect(screen.getByDisplayValue('Slide um')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Slide anterior' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Próximo slide' }));
+
+    expect(screen.getByDisplayValue('Slide dois')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Próximo slide' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Ir para o slide 1' }));
+
+    expect(screen.getByDisplayValue('Slide um')).toBeInTheDocument();
+  });
 });
