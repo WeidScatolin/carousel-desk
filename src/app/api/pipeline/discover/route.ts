@@ -82,21 +82,25 @@ export async function POST(request: Request): Promise<Response> {
       description: magnet.description,
     }));
 
-    const scored = await Promise.all(
-      enriched.map(async (item) => ({
-        item,
-        score: await scoreTheme(
-          {
-            sourceUrl: item.candidate.sourceUrl,
-            headline: item.candidate.headline,
-            articleBody: item.articleBody,
-            articleFacts: item.articleFacts,
-          },
-          brandStrategy,
-          leadMagnetOptions,
-        ),
-      })),
-    );
+    // Sequential, not Promise.all: firing all candidates at NVIDIA
+    // concurrently reliably triggers a connection error on this tier —
+    // there is no per-run time pressure here (this is a cron-triggered
+    // batch job, nothing is waiting on the response), so one at a time
+    // is the simple, robust choice.
+    const scored: { item: EnrichedCandidate; score: Awaited<ReturnType<typeof scoreTheme>> }[] = [];
+    for (const item of enriched) {
+      const score = await scoreTheme(
+        {
+          sourceUrl: item.candidate.sourceUrl,
+          headline: item.candidate.headline,
+          articleBody: item.articleBody,
+          articleFacts: item.articleFacts,
+        },
+        brandStrategy,
+        leadMagnetOptions,
+      );
+      scored.push({ item, score });
+    }
 
     const topThemes = scored
       .sort((a, b) => b.score.totalScore - a.score.totalScore)
