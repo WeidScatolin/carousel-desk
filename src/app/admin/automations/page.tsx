@@ -20,7 +20,7 @@ export default async function AutomationsPage(): Promise<JSX.Element> {
   return (
     <>
       <AdminNav />
-      <h1 className="p-4 pb-0 text-lg font-bold">Automações de comentário → DM</h1>
+      <h1 className="p-5 pb-0 font-heading text-2xl font-extrabold text-carvao">Automações de comentário → DM</h1>
       <AutomationsManager automations={automations} publishedPosts={publishedPosts} repliesEnabled={isPrivateRepliesEnabled()} />
     </>
   );

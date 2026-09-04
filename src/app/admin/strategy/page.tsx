@@ -9,7 +9,7 @@ export default async function StrategyPage(): Promise<JSX.Element> {
   return (
     <>
       <AdminNav />
-      <h1 className="p-4 pb-0 text-lg font-bold">Estratégia da marca</h1>
+      <h1 className="p-5 pb-0 font-heading text-2xl font-extrabold text-carvao">Estratégia da marca</h1>
       <StrategyForm strategy={strategy} />
     </>
   );

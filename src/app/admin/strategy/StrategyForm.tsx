@@ -63,34 +63,34 @@ export function StrategyForm({ strategy }: StrategyFormProps): JSX.Element {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex max-w-2xl flex-col gap-4 p-4">
+    <form onSubmit={handleSubmit} className="flex max-w-2xl flex-col gap-4 p-5">
       {FIELDS.map((field) => (
         <label key={field.name} className="flex flex-col gap-1 text-sm">
-          <span className="font-semibold text-neutral-700">{field.label}</span>
+          <span className="font-semibold text-carvao">{field.label}</span>
           {field.multiline ? (
             <textarea
               value={values[field.name]}
               onChange={(event) => setValues((prev) => ({ ...prev, [field.name]: event.target.value }))}
               rows={2}
               required
-              className="rounded border p-2"
+              className="rounded border border-carvao/15 bg-white p-2 text-carvao focus:border-laranja focus:outline-none"
             />
           ) : (
             <input
               value={values[field.name]}
               onChange={(event) => setValues((prev) => ({ ...prev, [field.name]: event.target.value }))}
               required
-              className="rounded border p-2"
+              className="rounded border border-carvao/15 bg-white p-2 text-carvao focus:border-laranja focus:outline-none"
             />
           )}
         </label>
       ))}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {saved ? <p className="text-sm text-green-700">Salvo.</p> : null}
+      {error ? <p className="text-sm font-medium text-laranja">{error}</p> : null}
+      {saved ? <p className="text-sm font-medium text-green-700">Salvo.</p> : null}
       <button
         type="submit"
         disabled={saving}
-        className="w-fit rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-40"
+        className="w-fit rounded bg-carvao px-4 py-2 text-sm font-semibold uppercase tracking-wide text-creme transition hover:bg-laranja disabled:opacity-40"
       >
         {saving ? 'Salvando…' : 'Salvar'}
       </button>

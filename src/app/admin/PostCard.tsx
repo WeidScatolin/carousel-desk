@@ -26,26 +26,23 @@ export function PostCard({ post, column }: PostCardProps): JSX.Element {
       style={{ transform: CSS.Translate.toString(transform) }}
       {...listeners}
       {...attributes}
-      className="rounded border bg-white p-3"
+      onClick={() => setShowDrawer(true)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') setShowDrawer(true);
+      }}
+      className="cursor-pointer rounded-lg border border-carvao/10 bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
     >
       {thumbnail ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={thumbnail} alt="Miniatura do carrossel" className="mb-2 h-24 w-auto rounded object-cover" />
       ) : null}
-      <p className="text-sm text-neutral-500">{post.status}</p>
+      <p className="text-sm font-semibold uppercase tracking-wide text-carvao/60">{post.status}</p>
       {post.rejectionReason ? (
-        <p className="mt-1 text-xs text-neutral-500">{post.rejectionReason}</p>
+        <p className="mt-1 text-xs text-carvao/50">{post.rejectionReason}</p>
       ) : null}
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          setShowDrawer(true);
-        }}
-        className="mt-2 text-xs text-neutral-600 underline"
-      >
-        Ver detalhes
-      </button>
+      <span className="mt-2 inline-block text-xs font-semibold text-laranja underline">Ver detalhes →</span>
       {showDrawer ? <PostDrawer post={post} onClose={() => setShowDrawer(false)} /> : null}
     </div>
   );
