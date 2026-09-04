@@ -88,7 +88,7 @@ model Post {
   leadMagnet          LeadMagnet?         @relation(fields: [leadMagnetId], references: [id])
 
   contentBrief        ContentBrief?
-  leadMagnetCampaign  LeadMagnetCampaign?
+  commentAutomations  CommentAutomation[]
 }
 
 enum SlideTemplate {
@@ -184,7 +184,6 @@ model LeadMagnet {
   createdAt             DateTime             @default(now())
   posts                 Post[]
   contentBriefs         ContentBrief[]
-  campaigns             LeadMagnetCampaign[]
 }
 
 model ContentBrief {
@@ -217,91 +216,74 @@ model ContentBrief {
   createdAt            DateTime       @default(now())
 }
 
-enum CampaignStatus {
+enum AutomationStatus {
   DRAFT
   ACTIVE
   PAUSED
   FINISHED
 }
 
-enum MatchMode {
+enum KeywordMatchMode {
   EXACT
   CONTAINS_WORD
 }
 
-model LeadMagnetCampaign {
-  id                    String           @id @default(uuid())
-  carouselId            String           @unique
-  post                  Post             @relation(fields: [carouselId], references: [id])
-  instagramMediaId      String?          @unique
+// Post + palavra-chave -> resposta privada específica. Criada manualmente
+// no /admin a partir de um post já publicado (instagramMediaId vem do
+// Post.instagramPostId nesse momento — nunca antes disso). Um post pode
+// ter várias automações (uma por palavra-chave); a combinação
+// instagramMediaId+normalizedKeyword é única.
+model CommentAutomation {
+  id                String            @id @default(uuid())
+  postId            String
+  post              Post              @relation(fields: [postId], references: [id])
+  instagramMediaId  String
+  keyword           String
+  normalizedKeyword String
+  matchMode         KeywordMatchMode  @default(CONTAINS_WORD)
+  replyMessage      String
+  assetUrl          String?
+  status            AutomationStatus  @default(DRAFT)
+  deliveries        CommentDelivery[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
-  leadMagnetId          String?
-  leadMagnet            LeadMagnet?      @relation(fields: [leadMagnetId], references: [id])
-
-  name                  String
-  keyword               String
-  matchMode             MatchMode        @default(CONTAINS_WORD)
-  assetName             String
-  assetUrl              String
-  deliveryMessage       String
-  qualificationQuestion String?
-  publicReplyTemplate   String?
-
-  status                CampaignStatus   @default(DRAFT)
-
-  totalComments         Int              @default(0)
-  matchedComments       Int              @default(0)
-  privateRepliesSent    Int              @default(0)
-  privateRepliesFailed  Int              @default(0)
-  qualifiedLeads        Int              @default(0)
-
-  commentEvents         CommentLeadEvent[]
-
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
+  @@unique([instagramMediaId, normalizedKeyword])
 }
 
-enum DeliveryStatus {
-  RECEIVED
+enum CommentDeliveryStatus {
+  DISCOVERED
   IGNORED
-  PENDING
+  MATCHED
+  PROCESSING
+  SIMULATED
   SENT
   FAILED
 }
 
-enum LeadStage {
-  COMMENTED
-  MATERIAL_SENT
-  RESPONDED
-  QUALIFIED
-  OPPORTUNITY
-  CUSTOMER
-}
+// One row per real Instagram comment that matched some automation's
+// keyword (instagramCommentId unique = at most one DM per comment, ever).
+// The row's own creation via a unique-constraint create() is the atomic
+// claim against concurrent polling runs.
+model CommentDelivery {
+  id                 String                @id @default(uuid())
+  automationId       String
+  automation         CommentAutomation     @relation(fields: [automationId], references: [id])
 
-model CommentLeadEvent {
-  id                  String             @id @default(uuid())
-  campaignId          String
-  campaign            LeadMagnetCampaign @relation(fields: [campaignId], references: [id])
+  instagramCommentId String                @unique
+  instagramMediaId   String
+  instagramUsername  String?
 
-  instagramCommentId  String             @unique
-  instagramMediaId    String
-  instagramUserId     String?
-  instagramUsername   String?
+  originalComment    String
+  normalizedComment  String
 
-  originalComment     String
-  normalizedComment   String
+  status             CommentDeliveryStatus @default(DISCOVERED)
+  externalMessageId  String?
+  retryCount         Int                   @default(0)
+  lastError          String?
 
-  keywordMatched      Boolean
-  deliveryStatus      DeliveryStatus     @default(RECEIVED)
-  leadStage           LeadStage          @default(COMMENTED)
-  simulated           Boolean            @default(false)
-
-  ignoredReason       String?
-  errorMessage        String?
-  retryCount          Int                @default(0)
-
-  receivedAt          DateTime           @default(now())
-  deliveredAt         DateTime?
-  createdAt           DateTime           @default(now())
-  updatedAt            DateTime          @updatedAt
+  discoveredAt       DateTime              @default(now())
+  deliveredAt        DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 }

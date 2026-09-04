@@ -120,37 +120,13 @@ export async function regeneratePostSlides(
     });
   }
 
-  if (contentBrief.postGoal === 'comment_dm') {
-    if (!copy.ctaKeyword) {
-      throw new Error('regeneratePostSlides: postGoal is comment_dm but the copy has no ctaKeyword');
-    }
-    if (!contentBrief.leadMagnet) {
-      throw new Error('regeneratePostSlides: postGoal is comment_dm but the theme has no linked LeadMagnet');
-    }
-    await prisma.leadMagnetCampaign.upsert({
-      where: { carouselId: postId },
-      create: {
-        carouselId: postId,
-        leadMagnetId: contentBrief.leadMagnet.id,
-        name: `${contentBrief.leadMagnet.name} — ${theme.headlineSuggestion}`,
-        keyword: copy.ctaKeyword,
-        assetName: contentBrief.leadMagnet.name,
-        assetUrl: contentBrief.leadMagnet.deliveryUrl,
-        deliveryMessage: `Oi! Aqui está o ${contentBrief.leadMagnet.name} que você pediu:\n\n${contentBrief.leadMagnet.deliveryUrl}`,
-        qualificationQuestion: contentBrief.leadMagnet.qualificationQuestion,
-        status: 'DRAFT',
-      },
-      update: {
-        leadMagnetId: contentBrief.leadMagnet.id,
-        name: `${contentBrief.leadMagnet.name} — ${theme.headlineSuggestion}`,
-        keyword: copy.ctaKeyword,
-        assetName: contentBrief.leadMagnet.name,
-        assetUrl: contentBrief.leadMagnet.deliveryUrl,
-        deliveryMessage: `Oi! Aqui está o ${contentBrief.leadMagnet.name} que você pediu:\n\n${contentBrief.leadMagnet.deliveryUrl}`,
-        qualificationQuestion: contentBrief.leadMagnet.qualificationQuestion,
-      },
-    });
+  if (contentBrief.postGoal === 'comment_dm' && !copy.ctaKeyword) {
+    throw new Error('regeneratePostSlides: postGoal is comment_dm but the copy has no ctaKeyword');
   }
 
+  // A CommentAutomation is no longer auto-created here — per the current
+  // comment-polling design, automations are configured manually in
+  // /admin/automations against an already-published post (its
+  // instagramMediaId only exists once that's true).
   return { caption: copy.caption, ctaKeyword: copy.ctaKeyword };
 }

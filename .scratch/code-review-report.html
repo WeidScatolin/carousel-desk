@@ -1,0 +1,458 @@
+<title>Auditoria do Motor de Conteúdo</title>
+<style>
+  :root {
+    --ground: #f6f3ee;
+    --surface: #ffffff;
+    --surface-raised: #fbf8f2;
+    --border: #e4ddd0;
+    --border-strong: #d6cbb6;
+    --text: #211c14;
+    --text-muted: #6b6255;
+    --text-faint: #9b9285;
+    --accent: #d4471e;
+    --accent-ink: #ffffff;
+    --sev-blocker: #b3261e;
+    --sev-blocker-bg: #fbe9e7;
+    --sev-blocker-border: #e8b4ac;
+    --sev-data: #a35a00;
+    --sev-data-bg: #fdf0dc;
+    --sev-data-border: #e9c78a;
+    --sev-other: #4c5b6b;
+    --sev-other-bg: #ecf0f3;
+    --sev-other-border: #c7d1da;
+    --ok: #2f6f4e;
+    --mono-tint: #efe9db;
+    --shadow: 0 1px 2px rgba(33, 28, 20, 0.06), 0 8px 24px -12px rgba(33, 28, 20, 0.18);
+  }
+
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --ground: #16130f;
+      --surface: #1d1a15;
+      --surface-raised: #221e18;
+      --border: #332c22;
+      --border-strong: #453b2c;
+      --text: #ede7da;
+      --text-muted: #a89e8c;
+      --text-faint: #7c7263;
+      --accent: #ff6a3d;
+      --accent-ink: #1a0f08;
+      --sev-blocker: #ff7a70;
+      --sev-blocker-bg: #2e1512;
+      --sev-blocker-border: #5a2620;
+      --sev-data: #f0a84e;
+      --sev-data-bg: #2c2010;
+      --sev-data-border: #563e17;
+      --sev-other: #9db3c9;
+      --sev-other-bg: #1a2229;
+      --sev-other-border: #33414d;
+      --ok: #7bc79a;
+      --mono-tint: #241f18;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #16130f;
+    --surface: #1d1a15;
+    --surface-raised: #221e18;
+    --border: #332c22;
+    --border-strong: #453b2c;
+    --text: #ede7da;
+    --text-muted: #a89e8c;
+    --text-faint: #7c7263;
+    --accent: #ff6a3d;
+    --accent-ink: #1a0f08;
+    --sev-blocker: #ff7a70;
+    --sev-blocker-bg: #2e1512;
+    --sev-blocker-border: #5a2620;
+    --sev-data: #f0a84e;
+    --sev-data-bg: #2c2010;
+    --sev-data-border: #563e17;
+    --sev-other: #9db3c9;
+    --sev-other-bg: #1a2229;
+    --sev-other-border: #33414d;
+    --ok: #7bc79a;
+    --mono-tint: #241f18;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font-family: "Inter", -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    padding: 0 0 96px;
+  }
+
+  h1, h2, h3 { font-family: "Barlow Condensed", "Arial Narrow", sans-serif; text-wrap: balance; margin: 0; }
+
+  .mono {
+    font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  a { color: inherit; }
+
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 28px; }
+
+  /* ---------- header ---------- */
+  header.top {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 56px 0 36px;
+  }
+
+  .eyebrow {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: inline-block;
+  }
+
+  h1.title {
+    font-weight: 800;
+    text-transform: uppercase;
+    font-size: clamp(38px, 6vw, 58px);
+    line-height: 0.98;
+    letter-spacing: 0.002em;
+  }
+
+  .dek {
+    max-width: 62ch;
+    color: var(--text-muted);
+    font-size: 16.5px;
+    margin-top: 16px;
+  }
+
+  .statrail {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-top: 32px;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .stat {
+    background: var(--surface-raised);
+    padding: 16px 18px;
+  }
+  .stat .n {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .stat .n.ok { color: var(--ok); }
+  .stat .l {
+    font-size: 11.5px;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 3px;
+  }
+
+  /* ---------- section groups ---------- */
+  main { padding-top: 40px; }
+
+  .group { margin-bottom: 48px; }
+
+  .group-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border-strong);
+  }
+  .group-head h2 {
+    font-size: 26px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .group-head .count {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12.5px;
+    color: var(--text-faint);
+  }
+  .group-note {
+    font-size: 13.5px;
+    color: var(--text-muted);
+    margin: -12px 0 20px;
+  }
+
+  /* ---------- finding card ---------- */
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .finding.blocker { border-left: 3px solid var(--sev-blocker); }
+  .finding.data { border-left: 3px solid var(--sev-data); }
+  .finding.other { border-left: 3px solid var(--sev-other); }
+
+  .f-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 20px 12px;
+  }
+
+  .f-path {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+    word-break: break-all;
+  }
+  .f-path .ln { color: var(--text-faint); }
+
+  .chip {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .chip.blocker { color: var(--sev-blocker); background: var(--sev-blocker-bg); border-color: var(--sev-blocker-border); }
+  .chip.data { color: var(--sev-data); background: var(--sev-data-bg); border-color: var(--sev-data-border); }
+  .chip.other { color: var(--sev-other); background: var(--sev-other-bg); border-color: var(--sev-other-border); }
+
+  .f-summary {
+    padding: 0 20px 14px;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .f-scenario {
+    margin: 0 20px 18px;
+    padding: 12px 14px;
+    background: var(--mono-tint);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+  .f-scenario .label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  /* ---------- footer note ---------- */
+  .colophon {
+    margin-top: 56px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-strong);
+    font-size: 13px;
+    color: var(--text-faint);
+    line-height: 1.7;
+  }
+  .colophon strong { color: var(--text-muted); }
+
+  @media (max-width: 620px) {
+    .statrail { grid-template-columns: repeat(2, 1fr); }
+    .f-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+  }
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<header class="top">
+  <div class="wrap">
+    <div class="eyebrow">carousel-desk · branch WeidScatolin/tuskfish</div>
+    <h1 class="title">Auditoria do<br>Motor de Conteúdo</h1>
+    <p class="dek">Revisão de código das Fases 1–8 (camada estratégica, scoring, copy dinâmica, identidade visual, funil de comentário→DM, dashboard). Cinco agentes em paralelo cobriram o diff por área funcional.</p>
+
+    <div class="statrail">
+      <div class="stat"><div class="n">14</div><div class="l">Commits revisados</div></div>
+      <div class="stat"><div class="n">107</div><div class="l">Arquivos no diff</div></div>
+      <div class="stat"><div class="n ok">318/318</div><div class="l">Testes passando</div></div>
+      <div class="stat"><div class="n">10</div><div class="l">Achados</div></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="group">
+    <div class="group-head">
+      <h2>Bloqueador de deploy</h2>
+      <span class="count">1 achado</span>
+    </div>
+    <p class="group-note">Ainda não afetou produção (nada foi deployado nesta sessão) — mas quebra o render de slide assim que este branch for ao ar.</p>
+
+    <article class="finding blocker">
+      <div class="f-head">
+        <span class="f-path">next.config.ts<span class="ln"> · linha 6</span></span>
+        <span class="chip blocker">Build</span>
+      </div>
+      <p class="f-summary">As fontes novas (@fontsource/*) não estão na lista de arquivos forçados no bundle serverless da Vercel.</p>
+      <div class="f-scenario">
+        <span class="label">Cenário de falha</span>
+        <code class="mono">generateSlideHtml.ts</code> chama <code class="mono">loadFontFaceCss()</code>, que faz <code class="mono">readFileSync</code> num caminho montado em runtime sob <code class="mono">node_modules/@fontsource/.../files/*.woff2</code>. Como não é um import estático, o rastreador de arquivos do Next não detecta — e <code class="mono">next.config.ts</code> só força a inclusão de <code class="mono">playwright-core</code> e <code class="mono">@sparticuz/chromium</code>, não os três pacotes de fonte novos. Qualquer render de slide em produção estoura <code class="mono">ENOENT</code>, quebrando o pipeline de geração de imagem inteiro — mesmo funcionando local.
+      </div>
+    </article>
+  </section>
+
+  <section class="group">
+    <div class="group-head">
+      <h2>Risco de perda de dados</h2>
+      <span class="count">3 achados</span>
+    </div>
+    <p class="group-note">Ações do editor no dashboard que podem destruir ou substituir trabalho sem aviso.</p>
+
+    <article class="finding data">
+      <div class="f-head">
+        <span class="f-path">src/app/api/posts/[id]/regenerate/route.ts<span class="ln"> · linha 41</span></span>
+        <span class="chip data">Sem rollback</span>
+      </div>
+      <p class="f-summary">Os slides antigos e suas imagens no Cloudinary são apagados antes de <code class="mono">regeneratePostSlides</code> rodar, sem qualquer forma de desfazer se a regeneração falhar depois.</p>
+      <div class="f-scenario">
+        <span class="label">Cenário de falha</span>
+        Editor clica "Regenerar carrossel inteiro" num carrossel já aprovado. <code class="mono">writeCarouselCopy</code> falha na validação (ex.: headline da capa passa de 18 palavras, ou um brief comment_dm não termina em slide "cta"). Os slides já foram apagados antes do bloco <code class="mono">try</code> — o post fica com <code class="mono">status: 'error'</code> e zero slides. O carrossel anterior é irrecuperável.
+      </div>
+    </article>
+
+    <article class="finding data">
+      <div class="f-head">
+        <span class="f-path">src/lib/pipeline/regeneratePostSlides.ts<span class="ln"> · linha 62</span></span>
+        <span class="chip data">Edição descartada</span>
+      </div>
+      <p class="f-summary">O upsert da campanha é montado só a partir do <code class="mono">contentBrief.leadMagnet</code> (nível do tema) e da <code class="mono">ctaKeyword</code> recém-gerada pela IA — nunca de <code class="mono">Post.leadMagnetId</code>/<code class="mono">Post.ctaKeyword</code>, os campos que o PostDrawer deixa o editor sobrescrever.</p>
+      <div class="f-scenario">
+        <span class="label">Cenário de falha</span>
+        Editor abre o PostDrawer, troca o lead magnet ou a palavra-chave, salva (grava em <code class="mono">Post.leadMagnetId</code>/<code class="mono">ctaKeyword</code>), e clica "Regenerar carrossel inteiro". <code class="mono">regeneratePostSlides</code> reconstrói a campanha a partir do vínculo original do tema e de uma keyword nova gerada pela IA — descartando a correção do editor em silêncio. A automação de DM ao vivo continua mandando o material errado sob a palavra-chave errada.
+      </div>
+    </article>
+
+    <article class="finding data">
+      <div class="f-head">
+        <span class="f-path">src/app/api/slides/[id]/route.ts<span class="ln"> · linha 46</span></span>
+        <span class="chip data">Sem rollback</span>
+      </div>
+      <p class="f-summary">A imagem antiga no Cloudinary é apagada antes do upload da nova, sem tratamento se o upload subsequente falhar.</p>
+      <div class="f-scenario">
+        <span class="label">Cenário de falha</span>
+        Ao editar um slide: <code class="mono">deleteSlideImage</code> funciona, depois <code class="mono">uploadSlideImage</code> lança erro (limite de taxa / rede). A exceção propaga sem tratamento, <code class="mono">slide.update</code> nunca roda, e a linha no banco continua referenciando um <code class="mono">cloudinaryPublicId</code>/<code class="mono">imageUrl</code> já deletado — imagem quebrada na UI, sem erro mostrado, sem caminho de retentativa.
+      </div>
+    </article>
+  </section>
+
+  <section class="group">
+    <div class="group-head">
+      <h2>Outros achados</h2>
+      <span class="count">6 achados</span>
+    </div>
+
+    <article class="finding other">
+      <div class="f-head">
+        <span class="f-path">src/lib/pipeline/processCommentEvent.ts<span class="ln"> · linha 31</span></span>
+        <span class="chip other">Concorrência</span>
+      </div>
+      <p class="f-summary">Sem lock/transação no check de comentário existente — dois webhooks concorrentes pro mesmo comentário novo podem passar ambos e disparar DM duplicada.</p>
+      <div class="f-scenario">
+        <span class="label">Cenário de falha</span>
+        A Meta reenvia um webhook (comum em timeout) enquanto o primeiro ainda processa. Ambas as chamadas veem <code class="mono">isFirstTimeSeen === true</code>, ambas chamam <code class="mono">sendPrivateReply</code> — o lead recebe a DM duas vezes, e <code class="mono">totalComments</code>/<code class="mono">matchedComments</code>/<code class="mono">privateRepliesSent</code> na campanha ficam duplicados.
+      </div>
+    </article>
+
+    <article class="finding other">
+      <div class="f-head">
+        <span class="f-path">src/app/api/pipeline/discover/route.ts<span class="ln"> · linha 85</span></span>
+        <span class="chip other">Resiliência</span>
+      </div>
+      <p class="f-summary">As chamadas de <code class="mono">scoreTheme</code> para todos os candidatos rodam num único <code class="mono">Promise.all</code>, sem isolar erro por item — diferente da etapa de enriquecimento logo acima.</p>
+      <div class="f-scenario">
+        <span class="label">Cenário de falha</span>
+        Um dos até 8 candidatos enriquecidos recebe JSON malformado da IA (<code class="mono">parseJsonResponse</code> lança erro). O <code class="mono">Promise.all</code> inteiro rejeita, o catch externo engole e retorna "Theme discovery failed" genérico — descartando todos os outros candidatos que foram raspados, enriquecidos e pontuados com sucesso naquela rodada.
+      </div>
+    </article>
+
+    <article class="finding other">
+      <div class="f-head">
+        <span class="f-path">src/lib/ai/extractJson.ts<span class="ln"> · linha 8</span></span>
+        <span class="chip other">Edge case</span>
+      </div>
+      <p class="f-summary">A extração localiza o JSON pelo primeiro "[" ou "{" da resposta — quebra se o preâmbulo em prosa do provedor tiver um colchete solto antes do JSON de verdade.</p>
+      <div class="f-scenario">
+        <span class="label">Cenário de falha</span>
+        Uma resposta como <code class="mono">"Nota [1]: segue o resultado: {...}"</code> tem o primeiro colchete dentro da prosa ("[1]"). O casamento de profundidade a partir desse colchete produz um trecho truncado, gerando um erro de parse confuso em vez de extrair o JSON real mais adiante.
+      </div>
+    </article>
+
+    <article class="finding other">
+      <div class="f-head">
+        <span class="f-path">src/lib/ai/writeCarouselCopy.ts<span class="ln"> · linha 96</span></span>
+        <span class="chip other">Falso positivo</span>
+      </div>
+      <p class="f-summary">A validação de tamanho checa o texto bruto da IA, mas o valor realmente salvo é a versão já limpa por <code class="mono">stripMarkup()</code>.</p>
+      <div class="f-scenario">
+        <span class="label">Cenário de falha</span>
+        A IA envolve um corpo perto de 280 caracteres em <code class="mono">**markdown**</code> ou tag HTML, passando do limite no texto bruto. <code class="mono">validateStructure</code> lança erro e a geração inteira é descartada como falha — mesmo que o corpo final já sanitizado estivesse dentro do limite.
+      </div>
+    </article>
+
+    <article class="finding other">
+      <div class="f-head">
+        <span class="f-path">src/app/admin/campaigns/CampaignsManager.tsx<span class="ln"> · linha 96</span></span>
+        <span class="chip other">UI silenciosa</span>
+      </div>
+      <p class="f-summary"><code class="mono">reprocess()</code> e <code class="mono">toggleExpandedRefresh()</code> ignoram o status da resposta — um reprocessamento que falha (409/500) é engolido sem mostrar erro.</p>
+      <div class="f-scenario">
+        <span class="label">Cenário de falha</span>
+        Usuário clica "Reprocessar" num evento FAILED; a API retorna 409/500; a UI só recarrega a lista, sem mensagem — o usuário não sabe que falhou e pode clicar várias vezes.
+      </div>
+    </article>
+
+    <article class="finding other">
+      <div class="f-head">
+        <span class="f-path">src/app/admin/lead-magnets/LeadMagnetsManager.tsx<span class="ln"> · linha 46</span></span>
+        <span class="chip other">UI silenciosa</span>
+      </div>
+      <p class="f-summary"><code class="mono">toggleActive()</code> e <code class="mono">remove()</code> não checam <code class="mono">response.ok</code> antes de <code class="mono">router.refresh()</code> — um PATCH/DELETE que falha é ignorado.</p>
+      <div class="f-scenario">
+        <span class="label">Cenário de falha</span>
+        Usuário clica "Excluir" num lead magnet; o DELETE falha com 500; a UI atualiza mesmo assim e o item continua lá, sem feedback — diferente de <code class="mono">handleSave</code>/<code class="mono">handleCreate</code> no mesmo arquivo, que mostram erro.
+      </div>
+    </article>
+  </section>
+
+  <p class="colophon">
+    Cinco agentes de revisão rodaram em paralelo, um por área funcional (pipeline/scraping/IA · leads/webhooks/Instagram · UI admin · rotas de API/validação/dados · schema/render/diversos), cada um aplicando os ângulos de correção, comportamento removido e rastreamento entre arquivos. Dois achados (rota de regenerar, <code class="mono">regeneratePostSlides</code>) foram encontrados de forma independente por dois agentes e mesclados como um só. <strong>Nenhum segredo ou credencial exposta foi encontrado</strong> — o <code class="mono">.env.example</code> e o arquivo de handoff foram checados especificamente, dado o commit recente de redação de credenciais, e ambos estão limpos.
+  </p>
+
+</main>
