@@ -4,7 +4,13 @@
 // direct fetch calls to this same endpoint/key, tested independently)
 // would hang the whole serverless invocation until the *platform*
 // killed it, indistinguishable from every other kind of failure.
-const REQUEST_TIMEOUT_MS = 20_000;
+// A trivial completion answers in a couple seconds, but the real prompts
+// this app sends (full brand context + article body, asking for a large
+// structured JSON response) take meaningfully longer to generate —
+// confirmed live: 20s was too short and this timeout itself was firing
+// mid-generation.
+const REQUEST_TIMEOUT_MS = 45_000;
+const MAX_COMPLETION_TOKENS = 2000;
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 
 function getApiKey(): string {
@@ -77,7 +83,7 @@ export async function completeWithNvidia(
       Authorization: `Bearer ${getApiKey()}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }] }),
+    body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: MAX_COMPLETION_TOKENS }),
   });
 
   if (!response.ok) {

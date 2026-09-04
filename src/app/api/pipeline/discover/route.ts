@@ -4,11 +4,11 @@ import { prisma } from '@/lib/prisma';
 import { enrichArticle } from '@/lib/scraping/enrichArticle';
 import { scrapeThemes, type ScrapedCandidate } from '@/lib/scraping/scrapeThemes';
 
-// Requests the platform's max allowed duration for this function. The
-// real bottleneck this route hit wasn't NVIDIA rejecting concurrent
-// connections — it was the whole invocation running past the default
-// limit while working through several candidates' scraping + scoring.
-export const maxDuration = 60;
+// Requests a generous duration for this function: scraping (up to 10s
+// per source) + enrichment (up to 10s per candidate, parallel) + AI
+// scoring (up to 45s per candidate, parallel) can add up to more than
+// the platform's old 60s default even with everything else fast.
+export const maxDuration = 120;
 
 // Enrichment opens a real HTTP request per candidate, so only a bounded
 // slice of the listing gets that treatment. Kept small — each one also
