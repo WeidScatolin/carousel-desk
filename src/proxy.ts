@@ -3,7 +3,14 @@ import { unsealData } from 'iron-session';
 import { SESSION_COOKIE_NAME, type SessionData } from '@/lib/auth/session';
 
 const PUBLIC_ADMIN_PATHS = ['/admin/login'];
-const PROTECTED_API_PREFIXES = ['/api/themes/', '/api/posts/', '/api/slides/'];
+const PROTECTED_API_PREFIXES = [
+  '/api/themes/',
+  '/api/posts/',
+  '/api/slides/',
+  '/api/brand-strategy',
+  '/api/lead-magnets',
+  '/api/comment-automations',
+];
 
 async function isRequestAuthenticated(request: NextRequest): Promise<boolean> {
   const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
@@ -43,5 +50,13 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/api/themes/:path*', '/api/posts/:path*', '/api/slides/:path*'],
+  matcher: [
+    '/admin/:path*',
+    '/api/themes/:path*',
+    '/api/posts/:path*',
+    '/api/slides/:path*',
+    '/api/brand-strategy/:path*',
+    '/api/lead-magnets/:path*',
+    '/api/comment-automations/:path*',
+  ],
 };

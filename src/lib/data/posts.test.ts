@@ -37,5 +37,7 @@ describe('listPostsByStatus', () => {
 
     expect(result.id).toBe(post.id);
     expect(result.slides.map((slide) => slide.order)).toEqual([0, 1]);
+    expect(result.theme.sourceUrl).toBe('https://example.com/posts-data-test');
+    expect(result.leadMagnet).toBeNull();
   });
 });

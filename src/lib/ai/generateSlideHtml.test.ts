@@ -86,4 +86,144 @@ describe('generateSlideHtml', () => {
 
     expect(html).not.toContain('<img');
   });
+
+  test('embeds the brand fonts as base64 in every slide, never a remote font request', () => {
+    const html = generateSlideHtml({ template: 'editorial_text', headline: 'Título', body: 'Corpo' });
+
+    expect(html).toContain('data:font/woff2;base64,');
+    expect(html).not.toContain('fonts.googleapis.com');
+    expect(html).not.toContain('fonts.gstatic.com');
+  });
+
+  test('highlights accentPhrase only when it is a real substring of the headline', () => {
+    const html = generateSlideHtml({
+      template: 'editorial_text',
+      headline: 'O atendimento manual não escala',
+      body: 'Corpo',
+      accentPhrase: 'não escala',
+    });
+
+    expect(html).toContain(`<span style="color:${'#FF3B0A'}">não escala</span>`);
+  });
+
+  test('never auto-highlights a word when no accentPhrase is given, unlike the legacy cover template', () => {
+    const html = generateSlideHtml({
+      template: 'editorial_text',
+      headline: 'Uma manchete qualquer aqui',
+      body: 'Corpo',
+    });
+
+    expect(html).not.toContain('<span style="color:#FF3B0A">aqui</span>');
+  });
+
+  test('ignores an accentPhrase that is not a real substring of the headline', () => {
+    const html = generateSlideHtml({
+      template: 'editorial_text',
+      headline: 'Uma manchete qualquer aqui',
+      body: 'Corpo',
+      accentPhrase: 'frase que não existe no headline',
+    });
+
+    expect(html).not.toContain('<span style="color:#FF3B0A">');
+  });
+
+  test('renders kicker and sourceLabel when given', () => {
+    const html = generateSlideHtml({
+      template: 'evidence',
+      headline: 'Os dados mostram X',
+      body: 'Resumo',
+      kicker: 'Radar',
+      sourceLabel: 'TechCrunch, 2026',
+    });
+
+    expect(html).toContain('Radar');
+    expect(html).toContain('Fonte: TechCrunch, 2026');
+  });
+
+  test('renders slide numbering and a progress bar when slideNumber/totalSlides are given', () => {
+    const html = generateSlideHtml({
+      template: 'editorial_text',
+      headline: 'Título',
+      body: 'Corpo',
+      slideNumber: 3,
+      totalSlides: 9,
+    });
+
+    expect(html).toContain('03/09');
+    expect(html).toContain('width:33%');
+  });
+
+  test('renders the instagram handle in the chrome, defaulting when none is given', () => {
+    const html = generateSlideHtml({ template: 'editorial_text', headline: 'Título', body: 'Corpo' });
+
+    expect(html).toContain('@carousel-desk');
+  });
+
+  test('renders a cinematic cover with a swipe hint when there are multiple slides', () => {
+    const html = generateSlideHtml(
+      { template: 'cover_cinematic', headline: 'Um agente que responde sozinho', body: 'Subtítulo', slideNumber: 1, totalSlides: 8 },
+      'https://example.com/cover.jpg',
+    );
+
+    expect(html).toContain('<img src="https://example.com/cover.jpg"');
+    expect(html).toContain('arraste');
+    expect(html).toContain('01/08');
+  });
+
+  test('renders a list_item slide with a numbered marker', () => {
+    const html = generateSlideHtml({
+      template: 'list_item',
+      headline: 'Mapeie seus processos',
+      body: 'Liste tudo que é manual hoje.',
+      slideNumber: 4,
+    });
+
+    expect(html).toContain('>04<');
+  });
+
+  test('renders a chat_demo slide as alternating message bubbles, not a literal app screenshot', () => {
+    const html = generateSlideHtml({
+      template: 'chat_demo',
+      headline: 'Como seria a conversa',
+      body: 'Oi, preciso de ajuda\nClaro, me conta mais',
+    });
+
+    expect(html).toContain('Oi, preciso de ajuda');
+    expect(html).toContain('Claro, me conta mais');
+    expect(html).not.toContain('WhatsApp');
+  });
+
+  test('renders a case_study slide with an accent border and optional image', () => {
+    const html = generateSlideHtml(
+      { template: 'case_study', headline: 'De 3h para 20min por dia', body: 'Resultado real' },
+      'https://example.com/case.jpg',
+    );
+
+    expect(html).toContain('border-left:4px solid #FF3B0A');
+    expect(html).toContain('<img src="https://example.com/case.jpg"');
+  });
+
+  test('renders a risk slide with an accent-bordered warning card', () => {
+    const html = generateSlideHtml({
+      template: 'risk',
+      headline: 'Automação sem revisão humana falha',
+      body: 'Sempre valide antes de publicar.',
+      kicker: 'Risco',
+    });
+
+    expect(html).toContain('border:2px solid #FF3B0A');
+    expect(html).toContain('Risco');
+  });
+
+  test('renders a cta slide with the keyword as a pill button', () => {
+    const html = generateSlideHtml({
+      template: 'cta',
+      headline: 'Quer o mapa completo?',
+      body: 'Comente e eu envio no seu Direct.',
+      kicker: 'MAPA',
+    });
+
+    expect(html).toContain('MAPA');
+    expect(html).toContain('border-radius:999px');
+  });
 });

@@ -14,15 +14,25 @@ enum ThemeStatus {
 }
 
 model Theme {
-  id                 String      @id @default(uuid())
-  sourceUrl          String      @unique
-  summary            String
-  headlineSuggestion String
-  referenceImageUrls String[]    @default([])
-  status             ThemeStatus @default(pending)
-  rejectionReason    String?
-  createdAt          DateTime    @default(now())
-  posts              Post[]
+  id                    String        @id @default(uuid())
+  sourceUrl             String        @unique
+  summary               String
+  headlineSuggestion    String
+  referenceImageUrls    String[]      @default([])
+  status                ThemeStatus   @default(pending)
+  rejectionReason       String?
+  createdAt             DateTime      @default(now())
+  posts                 Post[]
+
+  // Fase 2 — enriquecimento do artigo-fonte
+  articleBody           String?
+  articleFacts          String[]      @default([])
+  articleAuthor         String?
+  articlePublishedAt    DateTime?
+  hasSufficientEvidence Boolean       @default(false)
+
+  // Fase 3 — scoring/estratégia (1:1)
+  contentBrief          ContentBrief?
 }
 
 enum PostStatus {
@@ -35,24 +45,87 @@ enum PostStatus {
   error
 }
 
+enum ContentPillar {
+  radar
+  blueprint
+  diagnostic
+  proof
+}
+
+enum FunnelStage {
+  awareness
+  consideration
+  conversion
+}
+
+enum PostGoal {
+  follow
+  save_share
+  comment_dm
+  offer
+}
+
 model Post {
-  id              String     @id @default(uuid())
-  themeId         String
-  theme           Theme      @relation(fields: [themeId], references: [id])
-  status          PostStatus @default(generating)
-  scheduledAt     DateTime?
-  publishedAt     DateTime?
-  instagramPostId String?
-  errorMessage    String?
-  rejectionReason String?
-  createdAt       DateTime   @default(now())
-  slides          Slide[]
+  id                  String              @id @default(uuid())
+  themeId             String
+  theme               Theme               @relation(fields: [themeId], references: [id])
+  status              PostStatus          @default(generating)
+  scheduledAt         DateTime?
+  publishedAt         DateTime?
+  instagramPostId     String?
+  errorMessage        String?
+  rejectionReason     String?
+  createdAt           DateTime            @default(now())
+  slides              Slide[]
+
+  // Fase 4/6 — copy dinâmica, legenda, funil
+  caption             String?
+  ctaKeyword          String?
+  postGoal            PostGoal?
+  contentPillar       ContentPillar?
+  funnelStage         FunnelStage?
+  leadMagnetId        String?
+  leadMagnet          LeadMagnet?         @relation(fields: [leadMagnetId], references: [id])
+
+  contentBrief        ContentBrief?
+  commentAutomations  CommentAutomation[]
 }
 
 enum SlideTemplate {
   cover
   evidence
   framework
+  // Fase 5 — templates novos (valores adicionados, nenhum removido/renomeado)
+  cover_cinematic
+  editorial_text
+  list_item
+  chat_demo
+  case_study
+  risk
+  cta
+}
+
+enum SlideRole {
+  cover
+  problem
+  consequence
+  mechanism
+  example
+  list_item
+  evidence
+  risk
+  framework
+  bridge
+  cta
+}
+
+enum SlideVisualType {
+  main_image
+  diagram
+  mockup
+  screenshot
+  data
+  typography_only
 }
 
 enum ImageSource {
@@ -61,15 +134,156 @@ enum ImageSource {
 }
 
 model Slide {
-  id                 String        @id @default(uuid())
+  id                 String          @id @default(uuid())
   postId             String
-  post               Post          @relation(fields: [postId], references: [id])
+  post               Post            @relation(fields: [postId], references: [id])
   order              Int
   template           SlideTemplate
+  headline           String?
+  body               String?
   htmlContent        String
   imageUrl           String?
   cloudinaryPublicId String?
-  imageSource        ImageSource   @default(stock)
+  imageSource        ImageSource     @default(stock)
   sourceImageUrl     String?
   imageDeletedAt     DateTime?
+
+  // Fase 5 — identidade visual / contrato de copy dinâmico
+  role               SlideRole?
+  accentPhrase       String?
+  kicker             String?
+  sourceLabel        String?
+  visualType         SlideVisualType?
+  visualInstructions String?
+}
+
+model BrandStrategy {
+  id                String   @id @default(uuid())
+  name              String
+  positioning       String
+  targetAudience    String
+  coreProblem       String
+  promise           String
+  offerDescription  String
+  tone              String
+  defaultCtaKeyword String
+  instagramHandle   String
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model LeadMagnet {
+  id                    String               @id @default(uuid())
+  name                  String
+  description           String
+  deliveryUrl           String
+  ctaKeyword            String
+  qualificationQuestion String
+  active                Boolean              @default(true)
+  createdAt             DateTime             @default(now())
+  posts                 Post[]
+  contentBriefs         ContentBrief[]
+}
+
+model ContentBrief {
+  id                   String         @id @default(uuid())
+  themeId              String         @unique
+  theme                Theme          @relation(fields: [themeId], references: [id])
+  postId               String?        @unique
+  post                 Post?          @relation(fields: [postId], references: [id])
+
+  contentPillar        ContentPillar
+  funnelStage          FunnelStage
+  postGoal             PostGoal
+  targetPain           String
+  businessApplication  String
+  hook                 String
+  hookVariants         String[]       @default([])
+  angle                String
+  strategicRationale   String
+  leadMagnetId         String?
+  leadMagnet           LeadMagnet?    @relation(fields: [leadMagnetId], references: [id])
+
+  audienceFitScore     Int
+  businessImpactScore  Int
+  hookPotentialScore   Int
+  evidenceQualityScore Int
+  offerBridgeScore     Int
+  noveltyScore         Int
+  totalScore           Int
+
+  createdAt            DateTime       @default(now())
+}
+
+enum AutomationStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  FINISHED
+}
+
+enum KeywordMatchMode {
+  EXACT
+  CONTAINS_WORD
+}
+
+// Post + palavra-chave -> resposta privada específica. Criada manualmente
+// no /admin a partir de um post já publicado (instagramMediaId vem do
+// Post.instagramPostId nesse momento — nunca antes disso). Um post pode
+// ter várias automações (uma por palavra-chave); a combinação
+// instagramMediaId+normalizedKeyword é única.
+model CommentAutomation {
+  id                String            @id @default(uuid())
+  postId            String
+  post              Post              @relation(fields: [postId], references: [id])
+  instagramMediaId  String
+  keyword           String
+  normalizedKeyword String
+  matchMode         KeywordMatchMode  @default(CONTAINS_WORD)
+  replyMessage      String
+  assetUrl          String?
+  status            AutomationStatus  @default(DRAFT)
+  deliveries        CommentDelivery[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@unique([instagramMediaId, normalizedKeyword])
+}
+
+enum CommentDeliveryStatus {
+  DISCOVERED
+  IGNORED
+  MATCHED
+  PROCESSING
+  SIMULATED
+  SENT
+  FAILED
+}
+
+// One row per real Instagram comment that matched some automation's
+// keyword (instagramCommentId unique = at most one DM per comment, ever).
+// The row's own creation via a unique-constraint create() is the atomic
+// claim against concurrent polling runs.
+model CommentDelivery {
+  id                 String                @id @default(uuid())
+  automationId       String
+  automation         CommentAutomation     @relation(fields: [automationId], references: [id])
+
+  instagramCommentId String                @unique
+  instagramMediaId   String
+  instagramUsername  String?
+
+  originalComment    String
+  normalizedComment  String
+
+  status             CommentDeliveryStatus @default(DISCOVERED)
+  externalMessageId  String?
+  retryCount         Int                   @default(0)
+  lastError          String?
+
+  discoveredAt       DateTime              @default(now())
+  deliveredAt        DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 }

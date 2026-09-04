@@ -25,6 +25,10 @@ export async function renderSlideToImage(html: string): Promise<Buffer> {
       deviceScaleFactor: DEVICE_SCALE_FACTOR,
     });
     await page.setContent(html, { waitUntil: 'networkidle' });
+    // Fonts are embedded as base64 data URIs (see loadFonts.ts), so they're
+    // already in the DOM after setContent — but the browser still needs a
+    // tick to decode and apply them before a screenshot is trustworthy.
+    await page.evaluate(() => document.fonts.ready);
     return await page.screenshot({ type: 'png' });
   } finally {
     await browser.close();

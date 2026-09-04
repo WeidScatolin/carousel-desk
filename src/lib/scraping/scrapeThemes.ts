@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { fetchHtml as defaultFetchHtml } from './fetchHtml';
 
 export interface ScrapedCandidate {
   sourceUrl: string;
@@ -111,14 +112,6 @@ export const SOURCES: readonly SourceConfig[] = [
 export function parseSource(html: string, source: SourceConfig): ScrapedCandidate[] {
   const $ = cheerio.load(html);
   return source.extract($, source.url);
-}
-
-async function defaultFetchHtml(url: string): Promise<string> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`scrapeThemes: request to ${url} failed with status ${response.status}`);
-  }
-  return response.text();
 }
 
 export async function scrapeThemes(

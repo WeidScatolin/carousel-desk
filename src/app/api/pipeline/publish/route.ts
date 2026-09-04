@@ -45,7 +45,13 @@ async function claimPost(postId: string): Promise<boolean> {
   return claim.count === 1;
 }
 
-async function processPost(post: { id: string; slides: ReadonlyArray<{ id: string; imageUrl: string | null; cloudinaryPublicId: string | null }> }): Promise<PublishResult> {
+interface PublishablePost {
+  id: string;
+  caption: string | null;
+  slides: ReadonlyArray<{ id: string; imageUrl: string | null; cloudinaryPublicId: string | null }>;
+}
+
+async function processPost(post: PublishablePost): Promise<PublishResult> {
   const claimed = await claimPost(post.id);
   if (!claimed) {
     return { claimed: false, published: false };
@@ -58,6 +64,7 @@ async function processPost(post: { id: string; slides: ReadonlyArray<{ id: strin
     instagramPostId = await publishCarousel({
       instagramBusinessAccountId: requireAccountId(),
       slides: slides.map(({ imageUrl }) => ({ imageUrl })),
+      caption: post.caption ?? undefined,
     });
   } catch (error) {
     await prisma.post.update({ where: { id: post.id }, data: { status: 'error', errorMessage: errorMessage(error) } });
@@ -67,6 +74,10 @@ async function processPost(post: { id: string; slides: ReadonlyArray<{ id: strin
     where: { id: post.id },
     data: { status: 'published', publishedAt: new Date(), instagramPostId, errorMessage: null },
   });
+  // A CommentAutomation is not auto-created/linked here — per the
+  // comment-polling design, automations are configured manually in
+  // /admin/automations against an already-published post (instagramPostId
+  // only exists once that's true).
   const cleanupFailures = await cleanPublishedSlides(slides);
   if (cleanupFailures.length > 0) {
     await prisma.post.update({ where: { id: post.id }, data: { errorMessage: cleanupFailures.join('; ') } });

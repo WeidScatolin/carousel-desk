@@ -39,7 +39,7 @@ describe('publishCarousel', () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      'https://graph.instagram.com/v21.0/ig-user-1/media',
+      'https://graph.instagram.com/v26.0/ig-user-1/media',
       expect.objectContaining({
         method: 'POST',
         body: new URLSearchParams({
@@ -51,7 +51,7 @@ describe('publishCarousel', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      'https://graph.instagram.com/v21.0/ig-user-1/media',
+      'https://graph.instagram.com/v26.0/ig-user-1/media',
       expect.objectContaining({
         method: 'POST',
         body: new URLSearchParams({
@@ -63,7 +63,7 @@ describe('publishCarousel', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      'https://graph.instagram.com/v21.0/ig-user-1/media',
+      'https://graph.instagram.com/v26.0/ig-user-1/media',
       expect.objectContaining({
         method: 'POST',
         body: new URLSearchParams({
@@ -75,7 +75,7 @@ describe('publishCarousel', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
-      'https://graph.instagram.com/v21.0/ig-user-1/media_publish',
+      'https://graph.instagram.com/v26.0/ig-user-1/media_publish',
       expect.objectContaining({
         method: 'POST',
         body: new URLSearchParams({
@@ -84,6 +84,70 @@ describe('publishCarousel', () => {
         }),
       })
     );
+  });
+
+  test('includes the caption on the carousel container, not on item containers or media_publish', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ id: 'item-1' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'carousel-1' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'instagram-post-1' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await publishCarousel({
+      instagramBusinessAccountId: 'ig-user-1',
+      slides: [{ imageUrl: 'https://cdn.test/slide-1.png' }],
+      caption: 'Comente "MAPA" e eu envio no seu Direct.',
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://graph.instagram.com/v26.0/ig-user-1/media',
+      expect.objectContaining({
+        body: new URLSearchParams({
+          image_url: 'https://cdn.test/slide-1.png',
+          is_carousel_item: 'true',
+          access_token: 'test-access-token',
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://graph.instagram.com/v26.0/ig-user-1/media',
+      expect.objectContaining({
+        body: new URLSearchParams({
+          media_type: 'CAROUSEL',
+          children: 'item-1',
+          access_token: 'test-access-token',
+          caption: 'Comente "MAPA" e eu envio no seu Direct.',
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      'https://graph.instagram.com/v26.0/ig-user-1/media_publish',
+      expect.objectContaining({
+        body: new URLSearchParams({ creation_id: 'carousel-1', access_token: 'test-access-token' }),
+      }),
+    );
+  });
+
+  test('omits the caption field entirely when no caption is given', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ id: 'item-1' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'carousel-1' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'instagram-post-1' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await publishCarousel({
+      instagramBusinessAccountId: 'ig-user-1',
+      slides: [{ imageUrl: 'https://cdn.test/slide-1.png' }],
+    });
+
+    const carouselCall = fetchMock.mock.calls[1];
+    const body = carouselCall?.[1]?.body as URLSearchParams;
+    expect(body.has('caption')).toBe(false);
   });
 
   test('throws a clear error with the Meta body when an item container fails', async () => {

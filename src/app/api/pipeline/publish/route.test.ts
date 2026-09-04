@@ -140,4 +140,16 @@ describe('POST /api/pipeline/publish', () => {
     await expect(secondResponse.json()).resolves.toEqual({ processed: 0, published: 0, failed: 0 });
     expect(publishCarousel).toHaveBeenCalledTimes(1);
   });
+
+  test('passes the post caption through to publishCarousel', async () => {
+    const post = await createScheduledPost();
+    await prisma.post.update({ where: { id: post.id }, data: { caption: 'Comente "MAPA" e eu envio no seu Direct.' } });
+    vi.mocked(publishCarousel).mockResolvedValue('instagram-post-1');
+
+    await POST(authorizedRequest());
+
+    expect(publishCarousel).toHaveBeenCalledWith(
+      expect.objectContaining({ caption: 'Comente "MAPA" e eu envio no seu Direct.' }),
+    );
+  });
 });

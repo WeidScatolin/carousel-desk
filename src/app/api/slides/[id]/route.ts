@@ -19,12 +19,28 @@ export async function PATCH(request: Request, { params }: RouteParams): Promise<
   }
 
   const slide = await prisma.slide.findUniqueOrThrow({ where: { id } });
+  const totalSlides = await prisma.slide.count({ where: { postId: slide.postId } });
 
-  const html = await generateSlideHtml({
-    template: slide.template,
-    headline: parsed.data.headline,
-    body: parsed.data.body,
-  });
+  // Regenerating a slide's text must not silently drop its composition:
+  // the original background photo (sourceImageUrl), kicker, sourceLabel
+  // and its position in the carousel all carry over unchanged.
+  // accentPhrase carries over too unless the caller explicitly sent a new
+  // value (including null, to clear it) — `undefined` means "untouched".
+  const accentPhrase = parsed.data.accentPhrase !== undefined ? parsed.data.accentPhrase : slide.accentPhrase;
+
+  const html = await generateSlideHtml(
+    {
+      template: slide.template,
+      headline: parsed.data.headline,
+      body: parsed.data.body,
+      accentPhrase,
+      kicker: slide.kicker,
+      sourceLabel: slide.sourceLabel,
+      slideNumber: slide.order + 1,
+      totalSlides,
+    },
+    slide.sourceImageUrl,
+  );
   const imageBuffer = await renderSlideToImage(html);
 
   if (slide.cloudinaryPublicId) {
@@ -36,9 +52,12 @@ export async function PATCH(request: Request, { params }: RouteParams): Promise<
   const updated = await prisma.slide.update({
     where: { id },
     data: {
+      headline: parsed.data.headline,
+      body: parsed.data.body,
       htmlContent: html,
       imageUrl: uploaded.url,
       cloudinaryPublicId: uploaded.publicId,
+      accentPhrase,
     },
   });
 

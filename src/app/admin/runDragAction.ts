@@ -1,36 +1,59 @@
 import type { DragAction } from '@/lib/kanban/columns';
 
-async function postJson(url: string, body: unknown): Promise<void> {
-  await fetch(url, {
+export interface DragActionInput {
+  reason?: string;
+  scheduledAt?: string;
+}
+
+export interface DragActionResult {
+  ok: boolean;
+  blockers?: string[];
+  error?: string;
+}
+
+async function readResult(response: Response): Promise<DragActionResult> {
+  if (response.ok) {
+    return { ok: true };
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const blockers = Array.isArray(record.blockers) ? (record.blockers as string[]) : undefined;
+  const error = typeof record.error === 'string' ? record.error : undefined;
+  return { ok: false, blockers, error };
+}
+
+async function postJson(url: string, body: unknown): Promise<DragActionResult> {
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+  return readResult(response);
 }
 
-export async function runDragAction(action: DragAction): Promise<void> {
+export async function runDragAction(action: DragAction, input?: DragActionInput): Promise<DragActionResult> {
   switch (action.type) {
     case 'approve_theme': {
-      await fetch(`/api/themes/${action.themeId}/approve`, { method: 'POST' });
-      return;
+      const response = await fetch(`/api/themes/${action.themeId}/approve`, { method: 'POST' });
+      return readResult(response);
     }
     case 'reject_theme': {
-      const reason = window.prompt('Motivo da rejeição do tema:');
-      if (!reason) return;
-      await postJson(`/api/themes/${action.themeId}/reject`, { reason });
-      return;
+      if (!input?.reason) {
+        return { ok: false, error: 'Motivo é obrigatório.' };
+      }
+      return postJson(`/api/themes/${action.themeId}/reject`, { reason: input.reason });
     }
     case 'approve_post': {
-      const scheduledAt = window.prompt('Data/hora agendada (ISO 8601):');
-      if (!scheduledAt) return;
-      await postJson(`/api/posts/${action.postId}/approve`, { scheduledAt });
-      return;
+      if (!input?.scheduledAt) {
+        return { ok: false, error: 'Data/hora é obrigatória.' };
+      }
+      return postJson(`/api/posts/${action.postId}/approve`, { scheduledAt: input.scheduledAt });
     }
     case 'reject_post': {
-      const reason = window.prompt('Motivo da rejeição do post:');
-      if (!reason) return;
-      await postJson(`/api/posts/${action.postId}/reject`, { reason });
-      return;
+      if (!input?.reason) {
+        return { ok: false, error: 'Motivo é obrigatório.' };
+      }
+      return postJson(`/api/posts/${action.postId}/reject`, { reason: input.reason });
     }
   }
 }

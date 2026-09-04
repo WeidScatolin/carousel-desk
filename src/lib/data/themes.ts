@@ -1,10 +1,18 @@
 import { prisma } from '@/lib/prisma';
-import type { Theme, ThemeStatus } from '@/generated/prisma/client';
+import type { ContentBrief, Theme, ThemeStatus } from '@/generated/prisma/client';
 
-export async function listThemesByStatus(status: ThemeStatus): Promise<Theme[]> {
-  return prisma.theme.findMany({ where: { status }, orderBy: { createdAt: 'desc' } });
+export interface ThemeWithBrief extends Theme {
+  contentBrief: ContentBrief | null;
 }
 
-export async function listPendingThemes(): Promise<Theme[]> {
+export async function listThemesByStatus(status: ThemeStatus): Promise<ThemeWithBrief[]> {
+  return prisma.theme.findMany({
+    where: { status },
+    orderBy: { createdAt: 'desc' },
+    include: { contentBrief: true },
+  });
+}
+
+export async function listPendingThemes(): Promise<ThemeWithBrief[]> {
   return listThemesByStatus('pending');
 }

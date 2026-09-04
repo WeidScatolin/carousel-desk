@@ -1,14 +1,13 @@
-import type { Theme } from '@/generated/prisma/client';
-import { listThemesByStatus } from './themes';
+import { listThemesByStatus, type ThemeWithBrief } from './themes';
 import { listPostsByStatus, type PostWithSlides } from './posts';
 
 export interface KanbanBoard {
-  suggested: Theme[];
+  suggested: ThemeWithBrief[];
   generating: PostWithSlides[];
   pendingApproval: PostWithSlides[];
   scheduled: PostWithSlides[];
   published: PostWithSlides[];
-  rejectedThemes: Theme[];
+  rejectedThemes: ThemeWithBrief[];
   rejectedPosts: PostWithSlides[];
 }
 
