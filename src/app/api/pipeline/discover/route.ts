@@ -7,7 +7,8 @@ export async function POST(request: Request): Promise<Response> {
   if (!isPipelineAuthorized(request, true)) return Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const data = await discoverThemes();
-    return Response.json({ success: data.failed === 0, data }, { status: data.failed ? 503 : 200 });
+    const success = data.failed === 0 || data.discovered > 0 || data.busy === true;
+    return Response.json({ success, data }, { status: success ? 200 : 503 });
   } catch (error) {
     return Response.json({ success: false, error: safeError(error) }, { status: 503 });
   }

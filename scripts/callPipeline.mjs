@@ -12,7 +12,9 @@ try {
   const counts = body.data ?? body;
   console.log(JSON.stringify({ stage, httpStatus: response.status,
     ...Object.fromEntries(Object.entries(counts).filter(([, value]) => typeof value === 'number' || typeof value === 'boolean')) }));
-  if (!response.ok || body.success === false || Number(counts.failed ?? 0) > 0) process.exitCode = 1;
+  const failed = Number(counts.failed ?? 0);
+  const productiveDiscovery = stage === 'discover' && Number(counts.discovered ?? 0) > 0;
+  if (!response.ok || body.success === false || (failed > 0 && !productiveDiscovery)) process.exitCode = 1;
 } catch {
   console.error('Pipeline request failed or timed out; inspect the operation panel.');
   process.exitCode = 1;
