@@ -1,4 +1,4 @@
-import { publishCarousel, PublicationUncertainError, MetaRejectedError, ContainerExpiredError } from '@/lib/instagram/publishCarousel';
+import { publishCarousel, PublicationUncertainError, ContainerExpiredError } from '@/lib/instagram/publishCarousel';
 import { prisma } from '@/lib/prisma';
 import { isPipelineAuthorized } from '@/lib/pipeline/auth';
 import { acquireStage, finishStage, safeError } from '@/lib/pipeline/state';
@@ -56,8 +56,10 @@ export async function POST(request: Request): Promise<Response> {
           } });
           counts.published++;
         } catch (error) {
-          const uncertain = error instanceof PublicationUncertainError
-            || (publicationAttempted && !(error instanceof MetaRejectedError && error.status < 500));
+          // Once /media_publish has been called, even an HTTP rejection can race
+          // with a successful publish. Never retry automatically without first
+          // reconciling the Instagram account.
+          const uncertain = publicationAttempted || error instanceof PublicationUncertainError;
           failure = safeError(error);
           counts.failed++;
           await prisma.post.update({ where: { id: post.id }, data: {

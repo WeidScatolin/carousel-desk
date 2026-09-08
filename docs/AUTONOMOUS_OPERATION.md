@@ -5,8 +5,8 @@ Esta atualização corrige a instalação reproduzível e conecta descoberta, ge
 ## Aplicação
 
 1. Confira o resultado de **Validate Carousel Desk** na revisão. O CI usa PostgreSQL descartável e mocks para IA, Cloudinary e Instagram.
-2. No ambiente de produção, aplique **npm run prisma:deploy** antes de disponibilizar os novos endpoints. A migração adiciona campos e preserva os dados existentes. Faça isso na janela de implantação: o código anterior não conhece o estado UNCERTAIN.
-3. Implante a versão revisada no serviço que hospeda o Next.js, usando Node 24. Não execute prisma migrate dev em produção.
+2. Na Vercel, habilite o acesso às variáveis de sistema do projeto. Durante a instalação de um deploy com VERCEL_ENV=production, o projeto executa **prisma migrate deploy** antes do build. Preview, CI e desenvolvimento não aplicam migrações de produção. Uma falha de migração interrompe o deploy, evitando disponibilizar código incompatível com o banco.
+3. Em outra hospedagem, aplique **npm run prisma:deploy** no CI/CD antes de disponibilizar os novos endpoints. A migração adiciona campos e preserva os dados existentes. Implante com Node 24 e nunca execute prisma migrate dev em produção.
 4. Confira APP_URL no GitHub e a igualdade de PUBLISH_API_TOKEN no GitHub e na aplicação. Todos os fluxos passam a usar esse token; o endpoint de descoberta também aceita o token legado.
 5. Abra /admin/operation. Cadastre a estratégia da marca, resolva as configurações pendentes e escolha limite diário, horário UTC e nota mínima. A presença de uma chave não comprova sua validade ou permissões.
 6. Ative a operação após revisar o primeiro carrossel e validar a conta profissional da Meta. Confira um ID de mídia real e o post no Instagram, além do resultado do workflow.
@@ -38,6 +38,8 @@ O painel Operação mostra a última execução por etapa e posts com erros. HTT
 Nunca replique manualmente um post publish_uncertain ou uma entrega UNCERTAIN sem conferir o Instagram e reconciliar o ID do resultado existente. Falhas de token, permissão, cobrança de IA ou disponibilidade externa exigem a correção dessa dependência.
 
 Referências da Meta consultadas em 08/09/2026: [publicação de conteúdo](https://developers.facebook.com/documentation/instagram-platform/content-publishing), [limites de carrossel](https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/error-codes), [respostas privadas](https://developers.facebook.com/documentation/instagram-platform/private-replies).
+
+Referências de implantação consultadas em 08/09/2026: [variáveis de sistema da Vercel](https://vercel.com/docs/environment-variables/system-environment-variables), [migrações de desenvolvimento e produção do Prisma](https://github.com/prisma/docs/blob/main/apps/docs/content/docs/orm/v7/prisma-migrate/workflows/development-and-production.mdx).
 
 ## Verificação local
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 vi.mock('@/lib/instagram/publishCarousel', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/instagram/publishCarousel')>(), publishCarousel: vi.fn() }));
-import { publishCarousel, PublicationUncertainError } from '@/lib/instagram/publishCarousel';
+import { publishCarousel, PublicationUncertainError, MetaRejectedError } from '@/lib/instagram/publishCarousel';
 import { prisma } from '@/lib/prisma';
 import { fixturePost, clearFixtures } from '@/test/fixtures';
 import { POST } from './route';
@@ -38,6 +38,18 @@ test('an ambiguous publication is quarantined and never automatically sent again
   expect((await POST(request())).status).toBe(503);
   expect(await prisma.post.findUnique({ where: { id: post.id } })).toMatchObject({
     errorStage: 'publish_uncertain', instagramContainerId: 'container-1', publicationAttemptedAt: expect.any(Date), nextRetryAt: null,
+  });
+  await POST(request()); expect(publishCarousel).toHaveBeenCalledTimes(1);
+});
+test('a definitive HTTP rejection after the publish checkpoint is still quarantined', async () => {
+  const post = await due();
+  vi.mocked(publishCarousel).mockImplementation(async (_, checkpoint) => {
+    await checkpoint!.onPublishAttempt();
+    throw new MetaRejectedError(400, 100);
+  });
+  expect((await POST(request())).status).toBe(503);
+  expect(await prisma.post.findUnique({ where: { id: post.id } })).toMatchObject({
+    errorStage: 'publish_uncertain', publicationAttemptedAt: expect.any(Date), nextRetryAt: null,
   });
   await POST(request()); expect(publishCarousel).toHaveBeenCalledTimes(1);
 });
