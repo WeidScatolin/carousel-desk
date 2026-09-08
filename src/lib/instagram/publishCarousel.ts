@@ -51,6 +51,16 @@ async function waitForContainer(containerId: string, token: string): Promise<voi
   throw new Error('Instagram container is still processing; resume it on the next attempt');
 }
 
+export function instagramImageUrl(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== 'https:') throw new Error('Instagram images require a public HTTPS URL');
+  // Cloudinary also serves legacy PNG uploads in JPEG when requested by extension.
+  if (url.hostname === 'res.cloudinary.com' && url.pathname.includes('/image/upload/')) {
+    url.pathname = url.pathname.replace(/\.(png|webp)$/i, '.jpg');
+  }
+  return url.toString();
+}
+
 export interface PublishCheckpoint {
   existingContainerId?: string | null;
   onContainerCreated: (id: string) => Promise<void>;
@@ -69,7 +79,7 @@ export async function publishCarousel(post: {
     const children: string[] = [];
     for (const slide of post.slides) {
       children.push(await postForm(post.instagramBusinessAccountId + '/media', new URLSearchParams({
-        image_url: slide.imageUrl, is_carousel_item: 'true', access_token: token,
+        image_url: instagramImageUrl(slide.imageUrl), is_carousel_item: 'true', access_token: token,
       })));
     }
     const form = new URLSearchParams({ media_type: 'CAROUSEL', children: children.join(','), access_token: token });

@@ -47,10 +47,15 @@ export async function runAutopilot(now = new Date()): Promise<Record<string, num
   });
   const ready = await prisma.post.findMany({
     where: { status: 'pending_approval', autopilotSlot: { startsWith: today + ':' } },
-    include: { slides: true }, take: 3,
+    include: { slides: true, leadMagnet: true }, take: 3,
   });
   for (const post of ready) {
     const blockers = findApprovalBlockers(post);
+    if (post.postGoal === 'comment_dm' && (!settings.autoCommentReplies
+        || process.env.INSTAGRAM_PRIVATE_REPLIES_ENABLED !== 'true' || !post.leadMagnet?.active
+        || !post.leadMagnet.deliveryUrl.startsWith('https://'))) {
+      blockers.push('A entrega do material precisa estar ativa antes de publicar o convite.');
+    }
     if (blockers.length) {
       counts.blocked++;
       await prisma.post.update({ where: { id: post.id }, data: { errorStage: 'approval', errorMessage: blockers.join(' ') } });

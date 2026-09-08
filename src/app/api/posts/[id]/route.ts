@@ -15,6 +15,11 @@ export async function PATCH(request: Request, { params }: RouteParams): Promise<
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const post = await prisma.post.update({ where: { id }, data: parsed.data });
+  const claim = await prisma.post.updateMany({
+    where: { id, status: { in: ['pending_approval', 'error', 'rejected'] }, publicationAttemptedAt: null, instagramPostId: null },
+    data: { ...parsed.data, instagramContainerId: null },
+  });
+  if (!claim.count) return NextResponse.json({ error: 'Post cannot be edited in its current state' }, { status: 409 });
+  const post = await prisma.post.findUniqueOrThrow({ where: { id } });
   return NextResponse.json({ post }, { status: 200 });
 }

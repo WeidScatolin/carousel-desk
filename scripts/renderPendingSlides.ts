@@ -70,7 +70,7 @@ async function main(): Promise<void> {
         headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: JSON.stringify({ renderVersion: slide.renderVersion, error: 'Screenshot or render upload failed; inspect the render job.' }),
       }).catch(() => undefined);
-      console.error(`renderPendingSlides: slide ${slide.id} failed:`, error instanceof Error ? error.message : error);
+      console.error('renderPendingSlides: screenshot or upload failed for slide ' + slide.id);
     }
   }
 

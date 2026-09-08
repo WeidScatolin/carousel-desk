@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { publishCarousel, PublicationUncertainError, ContainerExpiredError } from './publishCarousel';
+import { publishCarousel, PublicationUncertainError, ContainerExpiredError, instagramImageUrl } from './publishCarousel';
 const input = { instagramBusinessAccountId: 'ig-test', slides: [{ imageUrl: 'https://cdn.test/1.jpg' }, { imageUrl: 'https://cdn.test/2.jpg' }], caption: 'Legenda' };
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 beforeEach(() => vi.stubEnv('INSTAGRAM_ACCESS_TOKEN', 'fake-token'));
@@ -44,4 +44,9 @@ test.each([1, 11])('rejects %i slides without contacting Meta', async n => {
   vi.stubGlobal('fetch', vi.fn());
   await expect(publishCarousel({ ...input, slides: Array.from({ length: n }, () => input.slides[0]) })).rejects.toThrow('2 to 10');
   expect(fetch).not.toHaveBeenCalled();
+});
+
+test('requests a JPEG derivative for legacy Cloudinary PNG slides', () => {
+  expect(instagramImageUrl('https://res.cloudinary.com/demo/image/upload/v1/slides/slide.png'))
+    .toBe('https://res.cloudinary.com/demo/image/upload/v1/slides/slide.jpg');
 });

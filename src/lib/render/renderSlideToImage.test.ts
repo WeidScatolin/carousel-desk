@@ -3,7 +3,7 @@ import imageSize from 'image-size';
 import { renderSlideToImage } from './renderSlideToImage';
 
 describe('renderSlideToImage', () => {
-  test('renders HTML into a JPEG at the exact slide dimensions, scaled 2x', async () => {
+  test('renders HTML into a JPEG at the exact slide dimensions, at 1080 by 1350', async () => {
     const html =
       '<html><body style="margin:0;width:1080px;height:1350px;background:#0A0A0A"></body></html>';
 
@@ -11,7 +11,7 @@ describe('renderSlideToImage', () => {
     const dimensions = imageSize(buffer);
 
     expect(dimensions.type).toBe('jpg');
-    expect(dimensions.width).toBe(1080 * 2);
-    expect(dimensions.height).toBe(1350 * 2);
+    expect(dimensions.width).toBe(1080);
+    expect(dimensions.height).toBe(1350);
   }, 30000);
 });

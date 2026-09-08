@@ -17,7 +17,11 @@ export async function POST(request: Request): Promise<Response> {
     const settings = await prisma.automationSettings.findUnique({ where: { id: 'default' } });
     const post = await prisma.post.findFirst({
       where: { status: 'scheduled', scheduledAt: { lte: new Date() }, instagramPostId: null,
-        publicationAttemptedAt: null, ...(settings?.enabled ? {} : { autopilotSlot: null }) },
+        publicationAttemptedAt: null,
+        OR: [{ autopilotSlot: null }, ...(settings?.enabled ? [{ autopilotSlot: {
+          gte: new Date().toISOString().slice(0, 10) + ':0',
+          lt: new Date().toISOString().slice(0, 10) + ':' + settings.dailyPostLimit,
+        } }] : [])] },
       include: { slides: { orderBy: { order: 'asc' } } }, orderBy: { scheduledAt: 'asc' },
     });
     if (post) {
@@ -59,7 +63,7 @@ export async function POST(request: Request): Promise<Response> {
           await prisma.post.update({ where: { id: post.id }, data: {
             status: 'error', errorStage: uncertain ? 'publish_uncertain' : 'publish',
             errorMessage: failure, processingStartedAt: null,
-            ...(uncertain ? {} : { publicationAttemptedAt: null }),
+            publicationAttemptedAt: uncertain ? new Date() : null,
             ...(error instanceof ContainerExpiredError ? { instagramContainerId: null } : {}),
             nextRetryAt: uncertain ? null : new Date(Date.now() + 15 * 60_000),
           } });
