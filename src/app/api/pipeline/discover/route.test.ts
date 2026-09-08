@@ -180,6 +180,57 @@ describe('POST /api/pipeline/discover', () => {
     expect(await response.json()).toEqual({ success: false, error: 'All selected articles failed to load' });
   });
 
+  test('retries a failed score once and keeps a productive partial run successful', async () => {
+    // Arrange
+    const candidates = [
+      { ...candidate, sourceUrl: 'https://example.com/success' },
+      { ...candidate, sourceUrl: 'https://example.com/failure' },
+    ];
+    vi.mocked(prisma.brandStrategy.findFirst).mockResolvedValue(brandStrategy as never);
+    vi.mocked(prisma.leadMagnet.findMany).mockResolvedValue([]);
+    vi.mocked(scrapeThemes).mockResolvedValue(candidates);
+    vi.mocked(enrichArticle).mockResolvedValue(enrichment);
+    vi.mocked(scoreTheme).mockImplementation(async (input) => {
+      if (input.sourceUrl.endsWith('/success')) return score;
+      throw new Error('temporary provider failure');
+    });
+    vi.mocked(prisma.theme.upsert).mockResolvedValue({ id: 'theme-1' } as never);
+    vi.mocked(prisma.contentBrief.upsert).mockResolvedValue({ id: 'brief-1' } as never);
+
+    // Act
+    const response = await POST(request());
+
+    // Assert
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      success: true,
+      data: { discovered: 1, failed: 1 },
+    });
+    expect(scoreTheme).toHaveBeenCalledTimes(3);
+    expect(prisma.theme.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  test('returns 503 when every score still fails after its retry', async () => {
+    // Arrange
+    vi.mocked(prisma.brandStrategy.findFirst).mockResolvedValue(brandStrategy as never);
+    vi.mocked(prisma.leadMagnet.findMany).mockResolvedValue([]);
+    vi.mocked(scrapeThemes).mockResolvedValue([candidate]);
+    vi.mocked(enrichArticle).mockResolvedValue(enrichment);
+    vi.mocked(scoreTheme).mockRejectedValue(new Error('provider unavailable'));
+
+    // Act
+    const response = await POST(request());
+
+    // Assert
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      success: false,
+      data: { discovered: 0, failed: 1 },
+    });
+    expect(scoreTheme).toHaveBeenCalledTimes(2);
+    expect(prisma.theme.upsert).not.toHaveBeenCalled();
+  });
+
   test('keeps only the top-scoring themes when more candidates than the cap are enriched', async () => {
     // Arrange
     const candidates = Array.from({ length: 5 }, (_, index) => ({
