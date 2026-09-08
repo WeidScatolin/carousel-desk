@@ -21,6 +21,8 @@ const automation: CommentAutomation & { post: typeof post } = {
   replyMessage: 'Aqui está o mapa!',
   assetUrl: null,
   status: 'DRAFT',
+  lastPolledAt: null,
+  commentsCursor: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   post,

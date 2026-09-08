@@ -12,7 +12,8 @@ export async function POST(_request: Request, { params }: RouteParams): Promise<
   // The claim: only a FAILED row is eligible, and this update is the atomic
   // gate against a concurrent reprocess request re-claiming the same row.
   const claim = await prisma.commentDelivery.updateMany({
-    where: { id, status: 'FAILED' },
+    where: { id, status: 'FAILED', retryCount: { lt: 3 }, automation: { status: 'ACTIVE' },
+      commentedAt: { gt: new Date(Date.now() - 7 * 86_400_000) } },
     data: { status: 'PROCESSING' },
   });
   if (claim.count !== 1) {
@@ -36,7 +37,7 @@ export async function POST(_request: Request, { params }: RouteParams): Promise<
       externalMessageId: outcome.externalMessageId,
       lastError: outcome.lastError,
       retryCount: { increment: 1 },
-      deliveredAt: outcome.status === 'FAILED' ? null : new Date(),
+      deliveredAt: ['SENT', 'SIMULATED'].includes(outcome.status) ? new Date() : null,
     },
   });
 

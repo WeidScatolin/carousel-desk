@@ -7,11 +7,12 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     brandStrategy: { findFirst: vi.fn() },
     leadMagnet: { findMany: vi.fn() },
-    theme: { upsert: vi.fn() },
+    theme: { upsert: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
     contentBrief: { upsert: vi.fn() },
   },
 }));
 
+vi.mock('@/lib/pipeline/state', () => ({ acquireStage: vi.fn().mockResolvedValue('owner'), finishStage: vi.fn(), safeError: (e: Error) => e.message }));
 import { scoreTheme } from '@/lib/ai/scoreTheme';
 import { prisma } from '@/lib/prisma';
 import { enrichArticle } from '@/lib/scraping/enrichArticle';
@@ -121,7 +122,7 @@ describe('POST /api/pipeline/discover', () => {
 
     // Assert
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ success: true, data: { discovered: 1 } });
+    expect(await response.json()).toEqual({ success: true, data: { discovered: 1, failed: 0 } });
     expect(prisma.theme.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { sourceUrl: 'https://example.com/news' },
@@ -159,12 +160,12 @@ describe('POST /api/pipeline/discover', () => {
     const response = await POST(request());
 
     // Assert
-    expect(await response.json()).toEqual({ success: true, data: { discovered: 0 } });
+    expect(await response.json()).toEqual({ success: true, data: { discovered: 0, failed: 0 } });
     expect(scoreTheme).not.toHaveBeenCalled();
     expect(prisma.theme.upsert).not.toHaveBeenCalled();
   });
 
-  test('skips a candidate whose article fetch fails without failing the whole run', async () => {
+  test('reports failure when all candidate article requests fail', async () => {
     // Arrange
     vi.mocked(prisma.brandStrategy.findFirst).mockResolvedValue(brandStrategy as never);
     vi.mocked(prisma.leadMagnet.findMany).mockResolvedValue([]);
@@ -175,8 +176,8 @@ describe('POST /api/pipeline/discover', () => {
     const response = await POST(request());
 
     // Assert
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ success: true, data: { discovered: 0 } });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ success: false, error: 'All selected articles failed to load' });
   });
 
   test('keeps only the top-scoring themes when more candidates than the cap are enriched', async () => {
@@ -201,7 +202,7 @@ describe('POST /api/pipeline/discover', () => {
 
     // Assert — only the first 3 candidates get enriched (news-3/news-4 never
     // reach scoring), and persisting itself caps at 3 too.
-    expect(await response.json()).toEqual({ success: true, data: { discovered: 3 } });
+    expect(await response.json()).toEqual({ success: true, data: { discovered: 3, failed: 0 } });
     expect(prisma.theme.upsert).toHaveBeenCalledTimes(3);
     expect(prisma.theme.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ where: { sourceUrl: 'https://example.com/news-2' } }),
@@ -216,7 +217,7 @@ describe('POST /api/pipeline/discover', () => {
     const response = await POST(request());
 
     // Assert
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(503);
     expect(scrapeThemes).not.toHaveBeenCalled();
   });
 
@@ -230,7 +231,7 @@ describe('POST /api/pipeline/discover', () => {
     const response = await POST(request());
 
     // Assert
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({ success: false, error: 'Theme discovery failed' });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ success: false, error: 'scraper unavailable' });
   });
 });

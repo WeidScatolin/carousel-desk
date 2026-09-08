@@ -2,7 +2,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    post: { findUniqueOrThrow: vi.fn(), update: vi.fn() },
+    post: { findUniqueOrThrow: vi.fn(), update: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     slide: { deleteMany: vi.fn() },
     brandStrategy: { findFirst: vi.fn() },
   },
@@ -60,8 +60,8 @@ describe('POST /api/posts/[id]/regenerate', () => {
     const response = await POST(request(), { params: Promise.resolve({ id: 'post-1' }) });
 
     expect(deleteSlideImage).toHaveBeenCalledWith('old-public-id');
-    expect(prisma.slide.deleteMany).toHaveBeenCalledWith({ where: { postId: 'post-1' } });
-    expect(regeneratePostSlides).toHaveBeenCalledWith('post-1', readyPost.theme, readyPost.theme.contentBrief, { id: 'brand-1' });
+    expect(prisma.slide.deleteMany).not.toHaveBeenCalled();
+    expect(regeneratePostSlides).toHaveBeenCalledWith('post-1', readyPost.theme, readyPost.theme.contentBrief, { id: 'brand-1' }, expect.any(Date));
     expect(response.status).toBe(200);
   });
 
@@ -71,9 +71,7 @@ describe('POST /api/posts/[id]/regenerate', () => {
     const response = await POST(request(), { params: Promise.resolve({ id: 'post-1' }) });
 
     expect(response.status).toBe(500);
-    expect(prisma.post.update).toHaveBeenCalledWith({
-      where: { id: 'post-1' },
-      data: { status: 'error', errorMessage: 'provider unavailable' },
-    });
+    expect(prisma.post.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'error', errorMessage: 'provider unavailable' }) }));
+    expect(deleteSlideImage).not.toHaveBeenCalled();
   });
 });

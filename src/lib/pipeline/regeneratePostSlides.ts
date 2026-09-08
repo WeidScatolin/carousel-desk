@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import type { BrandStrategy, ContentBrief, LeadMagnet, Theme } from '@/generated/prisma/client';
+import type { BrandStrategy, ContentBrief, LeadMagnet, Theme, Prisma } from '@/generated/prisma/client';
 import { generateSlideHtml } from '../ai/generateSlideHtml';
 import { writeCarouselCopy } from '../ai/writeCarouselCopy';
 import { resolveThemeImage } from '../images/resolveThemeImage';
@@ -20,19 +20,13 @@ export interface RegeneratedPostCopy {
   ctaKeyword: string | null;
 }
 
-// Shared by generatePostFromTheme (brand-new post) and the "regenerate
-// whole carousel" dashboard action (existing post, slides cleared first
-// by the caller). Writes fresh copy, renders every slide, and — when the
-// brief's postGoal is comment_dm — upserts the LeadMagnetCampaign rather
-// than creating it: a regenerate refreshes the keyword/message/name but
-// never touches an already-ACTIVE campaign's status, counters, or
-// instagramMediaId, so re-running copy generation can never wipe out
-// real comment/lead tracking.
+// Prepare the complete carousel before exposing slides to the render worker.
 export async function regeneratePostSlides(
   postId: string,
   theme: ThemeForGeneration,
   contentBrief: ContentBriefForGeneration,
   brandStrategy: BrandStrategy,
+  generationStartedAt: Date,
 ): Promise<RegeneratedPostCopy> {
   const copy = await writeCarouselCopy(
     {
@@ -67,6 +61,10 @@ export async function regeneratePostSlides(
       : null,
   );
 
+  if (contentBrief.postGoal === 'comment_dm' && !copy.ctaKeyword) {
+    throw new Error('regeneratePostSlides: postGoal is comment_dm but the copy has no ctaKeyword');
+  }
+
   const themeImage = await resolveThemeImage({
     headlineSuggestion: theme.headlineSuggestion,
     referenceImageUrls: theme.referenceImageUrls,
@@ -74,6 +72,7 @@ export async function regeneratePostSlides(
 
   const totalSlides = copy.slides.length;
 
+  const slides: Prisma.SlideCreateManyInput[] = [];
   for (const [index, slideCopy] of copy.slides.entries()) {
     const usesImage = slideCopy.visualType === 'main_image';
     const slideImage = usesImage ? themeImage : null;
@@ -101,8 +100,7 @@ export async function regeneratePostSlides(
     // (see loadFonts.ts, used inside generateSlideHtml), so it's fully
     // self-contained; the render-pending-slides GitHub Action screenshots
     // it with a full, ordinary Chromium and fills in imageUrl afterwards.
-    await prisma.slide.create({
-      data: {
+    slides.push({
         postId,
         order: index,
         template: slideCopy.template,
@@ -119,13 +117,22 @@ export async function regeneratePostSlides(
         sourceLabel: slideCopy.sourceLabel,
         visualType: slideCopy.visualType,
         visualInstructions: slideCopy.visualInstructions,
-      },
     });
   }
 
-  if (contentBrief.postGoal === 'comment_dm' && !copy.ctaKeyword) {
-    throw new Error('regeneratePostSlides: postGoal is comment_dm but the copy has no ctaKeyword');
-  }
+  // Commit all slides together. The timestamp prevents a timed-out invocation
+  // from overwriting a newer generation, and the worker never sees a partial set.
+  await prisma.$transaction(async (tx) => {
+    const claim = await tx.post.updateMany({
+      where: { id: postId, status: 'generating', processingStartedAt: generationStartedAt },
+      data: { caption: copy.caption, ctaKeyword: copy.ctaKeyword,
+        generationComplete: true, expectedSlideCount: slides.length,
+        errorMessage: null, errorStage: null, nextRetryAt: null },
+    });
+    if (claim.count !== 1) throw new Error('Generation superseded by another operation');
+    await tx.slide.deleteMany({ where: { postId } });
+    await tx.slide.createMany({ data: slides });
+  });
 
   // A CommentAutomation is no longer auto-created here — per the current
   // comment-polling design, automations are configured manually in

@@ -118,14 +118,13 @@ export async function scrapeThemes(
   fetchHtml: (url: string) => Promise<string> = defaultFetchHtml,
   sources: readonly SourceConfig[] = SOURCES,
 ): Promise<ScrapedCandidate[]> {
-  const bySourceUrl = new Map<string, ScrapedCandidate>();
-
-  for (const source of sources) {
-    const html = await fetchHtml(source.url);
-    for (const candidate of parseSource(html, source)) {
-      bySourceUrl.set(candidate.sourceUrl, candidate);
-    }
+  const results = await Promise.allSettled(sources.map(async source => parseSource(await fetchHtml(source.url), source)));
+  const available = results.flatMap(r => r.status === 'fulfilled' ? [r.value] : []);
+  if (!available.some(items => items.length)) throw new Error('No articles found in the configured sources');
+  // Round-robin keeps the second source in the bounded enrichment batch.
+  const candidates: ScrapedCandidate[] = [];
+  for (let index = 0; available.some(items => index < items.length); index++) {
+    for (const items of available) if (items[index]) candidates.push(items[index]);
   }
-
-  return Array.from(bySourceUrl.values());
+  return dedupeBySourceUrl(candidates);
 }

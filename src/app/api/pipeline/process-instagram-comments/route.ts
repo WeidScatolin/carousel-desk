@@ -1,155 +1,81 @@
-import { fetchAllComments, type InstagramComment } from '@/lib/instagram/fetchComments';
+import { fetchCommentsPage } from '@/lib/instagram/fetchComments';
 import { composeReplyMessage, deliverCommentReply } from '@/lib/leads/deliverCommentReply';
 import { matchesKeyword } from '@/lib/leads/matchKeyword';
 import { normalizeKeyword } from '@/lib/leads/normalizeKeyword';
 import { prisma } from '@/lib/prisma';
 import { isUniqueConstraintViolation } from '@/lib/prismaErrors';
-import type { CommentAutomation } from '@/generated/prisma/client';
+import { isPipelineAuthorized } from '@/lib/pipeline/auth';
+import { acquireStage, finishStage, safeError } from '@/lib/pipeline/state';
 
-interface Counts {
-  postsChecked: number;
-  commentsFound: number;
-  newComments: number;
-  matched: number;
-  simulated: number;
-  sent: number;
-  ignored: number;
-  failed: number;
-}
-
-function emptyCounts(postsChecked: number): Counts {
-  return { postsChecked, commentsFound: 0, newComments: 0, matched: 0, simulated: 0, sent: 0, ignored: 0, failed: 0 };
-}
-
-function authorized(request: Request): boolean {
-  const expectedToken = process.env.PUBLISH_API_TOKEN;
-  const authorization = request.headers.get('authorization');
-  return Boolean(expectedToken) && authorization === `Bearer ${expectedToken}`;
-}
-
-function groupByMedia(automations: CommentAutomation[]): Map<string, CommentAutomation[]> {
-  const groups = new Map<string, CommentAutomation[]>();
-  for (const automation of automations) {
-    const existing = groups.get(automation.instagramMediaId);
-    if (existing) {
-      existing.push(automation);
-    } else {
-      groups.set(automation.instagramMediaId, [automation]);
-    }
-  }
-  return groups;
-}
-
-interface MatchResult {
-  chosen: CommentAutomation | null;
-  conflicts: CommentAutomation[];
-}
-
-// automations arrive ordered by createdAt asc (the caller's query), so the
-// first match is the deterministic priority winner; the rest are recorded
-// as a conflict rather than silently dropped.
-function pickMatch(comment: InstagramComment, automations: CommentAutomation[]): MatchResult {
-  const matches = automations.filter((automation) => matchesKeyword(comment.text, automation.keyword, automation.matchMode));
-  return { chosen: matches[0] ?? null, conflicts: matches.slice(1) };
-}
-
-async function claimDelivery(
-  mediaId: string,
-  comment: InstagramComment,
-  automation: CommentAutomation,
-  conflictNote: string | null,
-) {
-  try {
-    return await prisma.commentDelivery.create({
-      data: {
-        automationId: automation.id,
-        instagramCommentId: comment.id,
-        instagramMediaId: mediaId,
-        instagramUsername: comment.username,
-        originalComment: comment.text,
-        normalizedComment: normalizeKeyword(comment.text),
-        status: 'PROCESSING',
-        lastError: conflictNote,
-      },
-    });
-  } catch (error) {
-    if (isUniqueConstraintViolation(error)) {
-      // Another concurrent run claimed this comment between our
-      // dedup check and this create() — not an error, just a lost race.
-      return null;
-    }
-    throw error;
-  }
-}
-
-async function processComment(mediaId: string, comment: InstagramComment, automations: CommentAutomation[], counts: Counts): Promise<void> {
-  const existing = await prisma.commentDelivery.findUnique({ where: { instagramCommentId: comment.id }, select: { id: true } });
-  if (existing) {
-    return;
-  }
-  counts.newComments += 1;
-
-  const { chosen, conflicts } = pickMatch(comment, automations);
-  if (!chosen) {
-    counts.ignored += 1;
-    return;
-  }
-  counts.matched += 1;
-
-  const conflictNote =
-    conflicts.length > 0 ? `Conflito: o comentário também combina com a(s) automação(ões) ${conflicts.map((a) => a.id).join(', ')}.` : null;
-  const delivery = await claimDelivery(mediaId, comment, chosen, conflictNote);
-  if (!delivery) {
-    return;
-  }
-
-  const outcome = await deliverCommentReply(comment.id, composeReplyMessage(chosen));
-  await prisma.commentDelivery.update({
-    where: { id: delivery.id },
-    data: {
-      status: outcome.status,
-      externalMessageId: outcome.externalMessageId,
-      lastError: outcome.lastError ?? conflictNote,
-      deliveredAt: outcome.status === 'FAILED' ? null : new Date(),
-    },
-  });
-
-  if (outcome.status === 'SIMULATED') counts.simulated += 1;
-  else if (outcome.status === 'SENT') counts.sent += 1;
-  else counts.failed += 1;
-}
-
-async function processMedia(mediaId: string, automations: CommentAutomation[], counts: Counts): Promise<void> {
-  let comments: InstagramComment[];
-  try {
-    comments = await fetchAllComments(mediaId);
-  } catch {
-    // A single media failing to fetch (rate limit, transient error, bad
-    // token) should not fail the whole run — the next scheduled poll
-    // retries it naturally. Nothing to record: no comment was seen.
-    return;
-  }
-  counts.commentsFound += comments.length;
-  for (const comment of comments) {
-    await processComment(mediaId, comment, automations, counts);
-  }
-}
-
+export const maxDuration = 300;
 export async function POST(request: Request): Promise<Response> {
-  if (!authorized(request)) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const automations = await prisma.commentAutomation.findMany({
-    where: { status: 'ACTIVE' },
-    orderBy: { createdAt: 'asc' },
-  });
-  const groups = groupByMedia(automations);
-  const counts = emptyCounts(groups.size);
-
-  for (const [mediaId, mediaAutomations] of groups) {
-    await processMedia(mediaId, mediaAutomations, counts);
-  }
-
-  return Response.json(counts);
+  if (!isPipelineAuthorized(request)) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  const owner = await acquireStage('comments');
+  if (!owner) return Response.json({ busy: true });
+  const counts = { postsChecked: 0, commentsFound: 0, newComments: 0, matched: 0, simulated: 0, sent: 0, ignored: 0, failed: 0 };
+  let failure: string | undefined;
+  try {
+    // Crashes during delivery are ambiguous: never turn them into retryable sends.
+    await prisma.commentDelivery.updateMany({
+      where: { status: 'PROCESSING', updatedAt: { lt: new Date(Date.now() - 15 * 60_000) } },
+      data: { status: 'UNCERTAIN', lastError: 'Delivery worker stopped before recording the result; verify Instagram' },
+    });
+    const first = await prisma.commentAutomation.findFirst({
+      where: { status: 'ACTIVE' }, orderBy: [{ lastPolledAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'asc' }],
+    });
+    if (first) {
+      const automations = await prisma.commentAutomation.findMany({
+        where: { status: 'ACTIVE', instagramMediaId: first.instagramMediaId }, orderBy: { createdAt: 'asc' },
+      });
+      counts.postsChecked = 1;
+      const page = await fetchCommentsPage(first.instagramMediaId, first.commentsCursor);
+      counts.commentsFound = page.data.length;
+      for (const comment of page.data) {
+        const commentedAt = new Date(comment.timestamp);
+        const cutoff = Date.now() - 7 * 86_400_000;
+        if (!Number.isFinite(commentedAt.getTime()) || commentedAt.getTime() <= cutoff || commentedAt.getTime() > Date.now()) {
+          counts.ignored++; continue;
+        }
+        const existing = await prisma.commentDelivery.findUnique({ where: { instagramCommentId: comment.id } });
+        const chosen = automations.find(a => matchesKeyword(comment.text, a.keyword, a.matchMode));
+        if (!chosen) { counts.ignored++; continue; }
+        if (existing && (existing.status !== 'FAILED' || existing.retryCount >= 3
+            || !existing.nextRetryAt || existing.nextRetryAt.getTime() > Date.now())) continue;
+        let delivery;
+        if (existing) {
+          const claim = await prisma.commentDelivery.updateMany({
+            where: { id: existing.id, status: 'FAILED', retryCount: existing.retryCount },
+            data: { status: 'PROCESSING', retryCount: { increment: 1 }, nextRetryAt: null },
+          });
+          if (!claim.count) continue;
+          delivery = existing;
+        } else {
+          counts.newComments++;
+          try {
+            delivery = await prisma.commentDelivery.create({ data: {
+              automationId: chosen.id, instagramCommentId: comment.id, instagramMediaId: first.instagramMediaId,
+              instagramUsername: comment.username, originalComment: comment.text, normalizedComment: normalizeKeyword(comment.text),
+              commentedAt, status: 'PROCESSING',
+            } });
+          } catch (error) { if (isUniqueConstraintViolation(error)) continue; throw error; }
+        }
+        counts.matched++;
+        const outcome = await deliverCommentReply(comment.id, composeReplyMessage(chosen));
+        await prisma.commentDelivery.update({ where: { id: delivery.id }, data: {
+          status: outcome.status, externalMessageId: outcome.externalMessageId, lastError: outcome.lastError,
+          deliveredAt: ['SENT', 'SIMULATED'].includes(outcome.status) ? new Date() : null,
+          nextRetryAt: outcome.status === 'FAILED' ? new Date(Date.now() + 15 * 60_000) : null,
+        } });
+        if (outcome.status === 'SENT') counts.sent++;
+        else if (outcome.status === 'SIMULATED') counts.simulated++;
+        else { counts.failed++; failure = outcome.lastError ?? 'Comment delivery failed'; }
+      }
+      await prisma.commentAutomation.updateMany({
+        where: { instagramMediaId: first.instagramMediaId },
+        data: { commentsCursor: page.after, lastPolledAt: new Date() },
+      });
+    }
+  } catch (error) { counts.failed++; failure = safeError(error); }
+  await finishStage('comments', owner, counts, failure);
+  return Response.json({ ...counts, ...(failure ? { error: failure } : {}) }, { status: counts.failed ? 503 : 200 });
 }

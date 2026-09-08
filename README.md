@@ -8,3 +8,7 @@ Uso pessoal — não é um SaaS.
 
 Design completo em
 [`docs/superpowers/specs/2026-09-02-carousel-desk-design.md`](docs/superpowers/specs/2026-09-02-carousel-desk-design.md).
+
+## Operação automática
+
+Veja [aplicação, limites e diagnóstico](docs/AUTONOMOUS_OPERATION.md). O modo automático começa desativado e é controlado em /admin/operation.

@@ -2,7 +2,7 @@ import { isPrivateRepliesEnabled } from '../instagram/graphApiConfig';
 import { getPrivateReplyProvider } from './privateReplyProvider';
 
 export interface ReplyOutcome {
-  status: 'SENT' | 'SIMULATED' | 'FAILED';
+  status: 'SENT' | 'SIMULATED' | 'FAILED' | 'UNCERTAIN';
   externalMessageId: string | null;
   lastError: string | null;
 }
@@ -23,8 +23,8 @@ export async function deliverCommentReply(commentId: string, message: string): P
   if (!isPrivateRepliesEnabled()) {
     return { status: 'SIMULATED', externalMessageId: result.externalMessageId ?? null, lastError: null };
   }
-  if (result.success) {
+  if (result.success && result.externalMessageId) {
     return { status: 'SENT', externalMessageId: result.externalMessageId ?? null, lastError: null };
   }
-  return { status: 'FAILED', externalMessageId: null, lastError: result.error ?? 'unknown error' };
+  return { status: result.uncertain || result.success ? 'UNCERTAIN' : 'FAILED', externalMessageId: null, lastError: result.error ?? 'unknown error' };
 }

@@ -3,6 +3,7 @@ export interface InstagramPrivateReplyProvider {
     success: boolean;
     externalMessageId?: string;
     error?: string;
+    uncertain?: boolean;
   }>;
 }
 
@@ -39,43 +40,28 @@ export class MetaPrivateReplyProvider implements InstagramPrivateReplyProvider {
     success: boolean;
     externalMessageId?: string;
     error?: string;
+    uncertain?: boolean;
   }> {
-    const token = getInstagramAccessToken();
-    const accountId = getInstagramBusinessAccountId();
-
+    let token: string;
+    let accountId: string;
+    try { token = getInstagramAccessToken(); accountId = getInstagramBusinessAccountId(); }
+    catch { return { success: false, error: 'Instagram credentials are not configured' }; }
     try {
-      const response = await fetch(`${getGraphApiBaseUrl()}/${accountId}/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          recipient: { comment_id: input.commentId },
-          message: { text: input.message },
-        }),
+      const response = await fetch(getGraphApiBaseUrl() + '/' + accountId + '/messages', {
+        method: 'POST', signal: AbortSignal.timeout(10_000),
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ recipient: { comment_id: input.commentId }, message: { text: input.message } }),
       });
-
-      const body = await response.text();
       if (!response.ok) {
-        return { success: false, error: `Instagram Graph API private reply failed with ${response.status}: ${body}` };
+        return { success: false, uncertain: response.status >= 500,
+          error: 'Instagram private reply rejected (HTTP ' + response.status + ')' };
       }
-
-      let payload: unknown;
-      try {
-        payload = JSON.parse(body);
-      } catch {
-        return { success: false, error: `Instagram Graph API private reply returned invalid JSON: ${body}` };
-      }
-
-      const messageId =
-        typeof payload === 'object' && payload !== null && 'message_id' in payload
-          ? String((payload as Record<string, unknown>).message_id)
-          : undefined;
-
-      return { success: true, externalMessageId: messageId };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
+      const payload: unknown = await response.json();
+      const id = typeof payload === 'object' && payload !== null && 'message_id' in payload ? payload.message_id : null;
+      if (typeof id !== 'string' || !id) return { success: false, uncertain: true, error: 'Instagram returned no message ID; verify before retrying' };
+      return { success: true, externalMessageId: id };
+    } catch {
+      return { success: false, uncertain: true, error: 'Private reply outcome unavailable; verify before retrying' };
     }
   }
 }

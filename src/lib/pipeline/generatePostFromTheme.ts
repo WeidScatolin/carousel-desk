@@ -1,56 +1,36 @@
 import { prisma } from '@/lib/prisma';
 import { regeneratePostSlides } from './regeneratePostSlides';
+import { safeError } from './state';
 
-export async function generatePostFromTheme(themeId: string): Promise<string> {
+export async function generatePostFromTheme(themeId: string, reservedPostId?: string): Promise<string> {
   const theme = await prisma.theme.findUniqueOrThrow({
-    where: { id: themeId },
-    include: { contentBrief: { include: { leadMagnet: true } } },
+    where: { id: themeId }, include: { contentBrief: { include: { leadMagnet: true } } },
   });
-
-  if (!theme.contentBrief) {
-    throw new Error(
-      `generatePostFromTheme: theme ${themeId} has no ContentBrief — run discover (Fase 3 scoring) before generating a post`,
-    );
-  }
-
-  const brandStrategy = await prisma.brandStrategy.findFirst({ where: { active: true } });
-  if (!brandStrategy) {
-    throw new Error('generatePostFromTheme: no active BrandStrategy configured');
-  }
-
-  const { contentBrief } = theme;
-
-  const post = await prisma.post.create({
-    data: {
-      themeId: theme.id,
-      status: 'generating',
-      postGoal: contentBrief.postGoal,
-      contentPillar: contentBrief.contentPillar,
-      funnelStage: contentBrief.funnelStage,
-      leadMagnetId: contentBrief.leadMagnetId,
-    },
-  });
-
-  try {
-    const { caption, ctaKeyword } = await regeneratePostSlides(post.id, theme, contentBrief, brandStrategy);
-
-    // Stays "generating" — slides have htmlContent but no rendered image
-    // yet (see regeneratePostSlides). The render-pending-slides GitHub
-    // Action screenshots each one and flips this to pending_approval once
-    // every slide on this post has an image.
-    const updated = await prisma.post.update({
-      where: { id: post.id },
-      data: { caption, ctaKeyword },
+  if (!theme.contentBrief) throw new Error('Theme has no ContentBrief; discover and score it first');
+  const brand = await prisma.brandStrategy.findFirst({ where: { active: true } });
+  if (!brand) throw new Error('No active BrandStrategy configured');
+  const brief = theme.contentBrief;
+  const startedAt = new Date();
+  const post = reservedPostId
+    ? await prisma.post.findUniqueOrThrow({ where: { id: reservedPostId } })
+    : await prisma.$transaction(async (tx) => {
+      const claim = await tx.theme.updateMany({ where: { id: themeId, status: 'pending' }, data: { status: 'approved' } });
+      if (claim.count !== 1) throw new Error('Theme already processed; use the existing post');
+      return tx.post.create({ data: { themeId, status: 'generating', processingStartedAt: startedAt,
+        postGoal: brief.postGoal, contentPillar: brief.contentPillar, funnelStage: brief.funnelStage,
+        leadMagnetId: brief.leadMagnetId } });
     });
-
-    return updated.id;
+  if (post.themeId !== themeId || post.status !== 'generating' || !post.processingStartedAt) {
+    throw new Error('Post is not reserved for generation');
+  }
+  try {
+    await regeneratePostSlides(post.id, theme, brief, brand, post.processingStartedAt);
+    return post.id;
   } catch (error) {
-    await prisma.post.update({
-      where: { id: post.id },
-      data: {
-        status: 'error',
-        errorMessage: error instanceof Error ? error.message : String(error),
-      },
+    await prisma.post.updateMany({
+      where: { id: post.id, status: 'generating', processingStartedAt: post.processingStartedAt },
+      data: { status: 'error', errorStage: 'generation', errorMessage: safeError(error),
+        nextRetryAt: new Date(Date.now() + 15 * 60_000) },
     });
     throw error;
   }

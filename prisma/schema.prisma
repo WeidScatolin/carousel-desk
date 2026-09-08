@@ -76,6 +76,16 @@ model Post {
   errorMessage        String?
   rejectionReason     String?
   createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @default(now()) @updatedAt
+  generationComplete Boolean             @default(false)
+  expectedSlideCount Int                 @default(0)
+  processingStartedAt DateTime?
+  retryCount          Int                 @default(0)
+  nextRetryAt         DateTime?
+  errorStage          String?
+  instagramContainerId String?
+  publicationAttemptedAt DateTime?
+  autopilotSlot       String?             @unique
   slides              Slide[]
 
   // Fase 4/6 — copy dinâmica, legenda, funil
@@ -89,6 +99,8 @@ model Post {
 
   contentBrief        ContentBrief?
   commentAutomations  CommentAutomation[]
+
+  @@index([status, scheduledAt, nextRetryAt], map: "Post_work_queue_idx")
 }
 
 enum SlideTemplate {
@@ -147,6 +159,7 @@ model Slide {
   imageSource        ImageSource     @default(stock)
   sourceImageUrl     String?
   imageDeletedAt     DateTime?
+  renderVersion      Int             @default(0)
 
   // Fase 5 — identidade visual / contrato de copy dinâmico
   role               SlideRole?
@@ -244,6 +257,8 @@ model CommentAutomation {
   replyMessage      String
   assetUrl          String?
   status            AutomationStatus  @default(DRAFT)
+  lastPolledAt      DateTime?
+  commentsCursor    String?
   deliveries        CommentDelivery[]
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
@@ -259,6 +274,7 @@ enum CommentDeliveryStatus {
   SIMULATED
   SENT
   FAILED
+  UNCERTAIN
 }
 
 // One row per real Instagram comment that matched some automation's
@@ -281,9 +297,32 @@ model CommentDelivery {
   externalMessageId  String?
   retryCount         Int                   @default(0)
   lastError          String?
+  nextRetryAt        DateTime?
 
+  commentedAt        DateTime?
   discoveredAt       DateTime              @default(now())
   deliveredAt        DateTime?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
+}
+
+model AutomationSettings {
+  id                  String   @id @default("default")
+  enabled             Boolean  @default(false)
+  dailyPostLimit      Int      @default(1)
+  publishHourUtc      Int      @default(12)
+  minThemeScore       Int      @default(70)
+  autoCommentReplies  Boolean  @default(false)
+  updatedAt           DateTime @updatedAt
+}
+
+model PipelineState {
+  stage          String    @id
+  leaseOwner     String?
+  leaseUntil     DateTime?
+  lastStartedAt  DateTime?
+  lastFinishedAt DateTime?
+  lastSuccessAt  DateTime?
+  lastError      String?
+  counts         Json?
 }

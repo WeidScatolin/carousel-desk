@@ -1,20 +1,24 @@
 name: Publish scheduled Instagram posts
-
 on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
-
+permissions:
+  contents: read
+concurrency:
+  group: pipeline-publish
+  cancel-in-progress: false
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
-      - name: Call publishing endpoint
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Call publish endpoint
         env:
-          PUBLISH_API_TOKEN: ${{ secrets.PUBLISH_API_TOKEN }}
           APP_URL: ${{ secrets.APP_URL }}
-        run: |
-          curl --fail-with-body --show-error --silent \
-            -X POST \
-            -H "Authorization: Bearer $PUBLISH_API_TOKEN" \
-            "$APP_URL/api/pipeline/publish"
+          PUBLISH_API_TOKEN: ${{ secrets.PUBLISH_API_TOKEN }}
+        run: node scripts/callPipeline.mjs publish

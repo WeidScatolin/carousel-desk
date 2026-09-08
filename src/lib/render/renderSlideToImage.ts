@@ -2,7 +2,7 @@ import { chromium, type Browser } from 'playwright';
 
 const SLIDE_WIDTH = 1080;
 const SLIDE_HEIGHT = 1350;
-const DEVICE_SCALE_FACTOR = 2;
+const DEVICE_SCALE_FACTOR = 1;
 
 async function launchBrowser(): Promise<Browser> {
   if (!process.env.VERCEL) {
@@ -29,7 +29,9 @@ export async function renderSlideToImage(html: string): Promise<Buffer> {
     // already in the DOM after setContent — but the browser still needs a
     // tick to decode and apply them before a screenshot is trustworthy.
     await page.evaluate(() => document.fonts.ready);
-    return await page.screenshot({ type: 'png' });
+    const brokenImages = await page.evaluate(() => Array.from(document.images).some(img => !img.complete || img.naturalWidth === 0));
+    if (brokenImages) throw new Error('Slide contains an image that failed to load');
+    return await page.screenshot({ type: 'jpeg', quality: 90 });
   } finally {
     await browser.close();
   }

@@ -27,7 +27,7 @@ function getApiKey(): string {
 
 async function fetchWithTimeout(path: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), path === '/models' ? 10_000 : REQUEST_TIMEOUT_MS);
   try {
     return await fetch(`${NVIDIA_BASE_URL}${path}`, { ...init, signal: controller.signal });
   } catch (error) {
