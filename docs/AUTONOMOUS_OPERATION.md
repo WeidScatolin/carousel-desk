@@ -33,7 +33,7 @@ A fila processa uma página de até 20 comentários por chamada e guarda o curso
 
 ## Diagnóstico
 
-O painel Operação mostra a última execução por etapa e posts com erros. HTTP 503 e falhas parciais de renderização tornam o workflow vermelho. Workflow verde indica execução técnica concluída; não comprova publicação, recebimento da mensagem ou geração de leads.
+O painel Operação mostra a última execução por etapa e posts com erros. A descoberta repete uma avaliação de IA que falhar e continua quando ao menos um tema foi salvo; o contador `failed` preserva a falha parcial para diagnóstico. HTTP 503 fica reservado para execuções sem nenhum tema utilizável, e falhas parciais de renderização tornam o workflow vermelho. Workflow verde indica execução técnica concluída; não comprova publicação, recebimento da mensagem ou geração de leads.
 
 Nunca replique manualmente um post publish_uncertain ou uma entrega UNCERTAIN sem conferir o Instagram e reconciliar o ID do resultado existente. Falhas de token, permissão, cobrança de IA ou disponibilidade externa exigem a correção dessa dependência.
 
