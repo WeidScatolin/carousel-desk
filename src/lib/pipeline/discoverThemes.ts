@@ -83,19 +83,22 @@ export async function discoverThemes(): Promise<{ discovered: number; failed: nu
     }));
 
     const assessments = await Promise.allSettled(
-      enriched.map(async (item) => ({
-        item,
-        score: await scoreTheme(
-          {
-            sourceUrl: item.candidate.sourceUrl,
-            headline: item.candidate.headline,
-            articleBody: item.articleBody,
-            articleFacts: item.articleFacts,
-          },
-          brandStrategy,
-          leadMagnetOptions,
-        ),
-      })),
+      enriched.map(async (item) => {
+        const input = {
+          sourceUrl: item.candidate.sourceUrl,
+          headline: item.candidate.headline,
+          articleBody: item.articleBody,
+          articleFacts: item.articleFacts,
+        };
+        try {
+          return { item, score: await scoreTheme(input, brandStrategy, leadMagnetOptions) };
+        } catch {
+          // Providers occasionally return a transient error or malformed JSON.
+          // One bounded retry keeps a single bad response from wasting an
+          // otherwise healthy discovery run.
+          return { item, score: await scoreTheme(input, brandStrategy, leadMagnetOptions) };
+        }
+      }),
     );
 
     counts.failed = assessments.filter(r => r.status === 'rejected').length;
@@ -163,7 +166,8 @@ export async function discoverThemes(): Promise<{ discovered: number; failed: nu
     }
 
     counts.discovered = topThemes.length;
-    await finishStage('discover', owner, counts, counts.failed ? 'Some articles could not be scored' : undefined);
+    const hardFailure = counts.failed > 0 && counts.discovered === 0;
+    await finishStage('discover', owner, counts, hardFailure ? 'No article could be scored' : undefined);
     return counts;
   } catch (error) {
     await finishStage('discover', owner, { ...counts, failed: counts.failed + 1 }, safeError(error));
