@@ -17,7 +17,7 @@ export class InstagramRateLimitError extends Error {}
 export class InstagramAuthError extends Error {}
 
 const REQUEST_TIMEOUT_MS = 10_000;
-const COMMENTS_PAGE_LIMIT = 50;
+const COMMENTS_PAGE_LIMIT = 20;
 // Safety cap so a pathological `paging.next` loop can never spin forever.
 const MAX_PAGES = 20;
 
@@ -44,7 +44,7 @@ function isAuthErrorBody(body: string): boolean {
   }
 }
 
-interface CommentsPage {
+export interface CommentsPage {
   data: InstagramComment[];
   after: string | null;
 }
@@ -72,7 +72,7 @@ function parseCommentsPage(payload: unknown): CommentsPage {
   return { data, after };
 }
 
-async function fetchCommentsPage(instagramMediaId: string, after: string | null): Promise<CommentsPage> {
+export async function fetchCommentsPage(instagramMediaId: string, after: string | null): Promise<CommentsPage> {
   const params = new URLSearchParams({
     fields: 'id,text,username,timestamp',
     limit: String(COMMENTS_PAGE_LIMIT),
@@ -133,5 +133,6 @@ export async function fetchAllComments(instagramMediaId: string): Promise<Instag
     }
     after = result.after;
   }
+  if (after && comments.length >= MAX_PAGES * COMMENTS_PAGE_LIMIT) throw new Error('Comment pagination limit reached; use the cursor-based processor');
   return comments;
 }

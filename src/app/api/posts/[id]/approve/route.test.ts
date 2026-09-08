@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/prisma', () => ({
-  prisma: { post: { update: vi.fn(), findUniqueOrThrow: vi.fn() } },
+  prisma: { post: { updateMany: vi.fn().mockResolvedValue({ count: 1 }), findUniqueOrThrow: vi.fn() } },
 }));
 
 import { prisma } from '@/lib/prisma';
@@ -16,15 +16,16 @@ function buildRequest(body: unknown): Request {
 
 const readyPost = {
   id: 'post-1',
+  status: 'pending_approval',
   caption: 'Legenda pronta',
   postGoal: 'follow',
   ctaKeyword: null,
-  slides: [{ role: 'cover', sourceLabel: null, imageUrl: 'https://cdn.test/1.png' }],
+  slides: [{ role: 'cover', sourceLabel: null, imageUrl: 'https://cdn.test/1.png' }, { role: 'cta', sourceLabel: null, imageUrl: 'https://cdn.test/2.png' }],
 };
 
 describe('POST /api/posts/[id]/approve', () => {
   beforeEach(() => {
-    vi.mocked(prisma.post.update).mockReset();
+    vi.mocked(prisma.post.updateMany).mockReset().mockResolvedValue({ count: 1 });
     vi.mocked(prisma.post.findUniqueOrThrow).mockReset();
     vi.mocked(prisma.post.findUniqueOrThrow).mockResolvedValue(readyPost as never);
   });
@@ -43,8 +44,8 @@ describe('POST /api/posts/[id]/approve', () => {
       params: Promise.resolve({ id: 'post-1' }),
     });
 
-    expect(prisma.post.update).toHaveBeenCalledWith({
-      where: { id: 'post-1' },
+    expect(prisma.post.updateMany).toHaveBeenCalledWith({
+      where: { id: 'post-1', status: 'pending_approval', publicationAttemptedAt: null, instagramPostId: null },
       data: { status: 'scheduled', scheduledAt: new Date('2026-09-05T12:00:00.000Z') },
     });
     expect(response.status).toBe(200);
@@ -63,6 +64,6 @@ describe('POST /api/posts/[id]/approve', () => {
     expect(response.status).toBe(422);
     const payload = await response.json();
     expect(payload.blockers).toContain('O post não tem legenda.');
-    expect(prisma.post.update).not.toHaveBeenCalled();
+    expect(prisma.post.updateMany).not.toHaveBeenCalled();
   });
 });

@@ -2,15 +2,19 @@
   "name": "carousel-desk",
   "version": "0.1.0",
   "private": true,
+  "engines": { "node": ">=24 <25" },
+  "packageManager": "npm@11.9.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "prisma generate",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "prisma generate && node scripts/deployProductionMigrations.mjs",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

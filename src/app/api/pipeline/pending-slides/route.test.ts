@@ -30,9 +30,10 @@ describe('GET /api/pipeline/pending-slides', () => {
 
     expect(response.status).toBe(200);
     expect(prisma.slide.findMany).toHaveBeenCalledWith({
-      where: { imageUrl: null, post: { status: 'generating' } },
-      select: { id: true, postId: true, htmlContent: true },
-      orderBy: { order: 'asc' },
+      where: { imageUrl: null, post: { status: 'generating', generationComplete: true } },
+      select: { id: true, postId: true, htmlContent: true, renderVersion: true },
+      orderBy: [{ post: { createdAt: 'asc' } }, { order: 'asc' }],
+      take: 30,
     });
     await expect(response.json()).resolves.toEqual({ slides: [{ id: 's1', postId: 'p1', htmlContent: '<html></html>' }] });
   });

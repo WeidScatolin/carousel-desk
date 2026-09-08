@@ -86,7 +86,7 @@ describe('MetaPrivateReplyProvider', () => {
     const result = await provider.sendPrivateReply({ commentId: 'comment-1', message: 'Oi!' });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('duplicate private reply');
+    expect(result.error).toContain('HTTP 400');
   });
 
   test('returns success:false when the request itself throws', async () => {
@@ -95,6 +95,6 @@ describe('MetaPrivateReplyProvider', () => {
 
     const result = await provider.sendPrivateReply({ commentId: 'comment-1', message: 'Oi!' });
 
-    expect(result).toEqual({ success: false, error: 'network unreachable' });
+    expect(result).toEqual({ success: false, uncertain: true, error: 'Private reply outcome unavailable; verify before retrying' });
   });
 });

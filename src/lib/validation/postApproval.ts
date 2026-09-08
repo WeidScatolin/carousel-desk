@@ -37,5 +37,11 @@ export function findApprovalBlockers(post: ApprovablePost): string[] {
     blockers.push('O post não tem nenhum slide.');
   }
 
+  if (post.slides.length === 1 || post.slides.length > 10) {
+    blockers.push('Um carrossel precisa de 2 a 10 slides.');
+  }
+  if (post.caption && post.caption.length > 2200) {
+    blockers.push('A legenda excede 2.200 caracteres.');
+  }
   return blockers;
 }

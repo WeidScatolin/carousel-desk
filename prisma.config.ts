@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { defineConfig, env } from 'prisma/config';
+import { defineConfig } from 'prisma/config';
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
@@ -7,6 +7,8 @@ export default defineConfig({
     path: 'prisma/migrations',
   },
   datasource: {
-    url: env('DATABASE_URL'),
+    // Client generation (including the render worker's npm ci) does not
+    // connect to a database. Database commands still require a real URL.
+    url: process.env.DATABASE_URL,
   },
 });

@@ -102,12 +102,12 @@ describe('writeCarouselCopy', () => {
     await expect(writeCarouselCopy(theme, followBrief, brand)).rejects.toThrow('writeCarouselCopy:');
   });
 
-  test('rejects more than 13 slides', async () => {
+  test('rejects more than 10 slides', async () => {
     // Arrange
     vi.stubEnv('PROVIDER_COPYWRITING', 'nvidia');
     const slides = [
       buildSlide({ role: 'cover', template: 'cover_cinematic' }),
-      ...Array.from({ length: 13 }, () => buildSlide()),
+      ...Array.from({ length: 10 }, () => buildSlide()),
     ];
     vi.mocked(completeWithNvidia).mockResolvedValue(JSON.stringify(buildValidResponse({ slides })));
 

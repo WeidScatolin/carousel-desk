@@ -53,7 +53,7 @@ describe('generatePostFromTheme', () => {
         articleBody: 'Corpo real do artigo de teste.',
         articleFacts: ['Um fato real.'],
         hasSufficientEvidence: true,
-        status: 'approved',
+        status: 'pending',
       },
     });
     themeId = theme.id;
@@ -111,7 +111,7 @@ describe('generatePostFromTheme', () => {
         sourceUrl: 'https://example.com/no-brief',
         summary: 'resumo',
         headlineSuggestion: 'Sem brief',
-        status: 'approved',
+        status: 'pending',
       },
     });
 

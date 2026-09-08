@@ -1,103 +1,87 @@
-import { publishCarousel } from '@/lib/instagram/publishCarousel';
+import { publishCarousel, PublicationUncertainError, ContainerExpiredError } from '@/lib/instagram/publishCarousel';
 import { prisma } from '@/lib/prisma';
-import { deleteSlideImage } from '@/lib/storage/cloudinary';
+import { isPipelineAuthorized } from '@/lib/pipeline/auth';
+import { acquireStage, finishStage, safeError } from '@/lib/pipeline/state';
+import { linkCommentAutomation } from '@/lib/pipeline/linkCommentAutomation';
+import { findApprovalBlockers } from '@/lib/validation/postApproval';
 
-interface PublishResult { claimed: boolean; published: boolean; }
-interface ReadySlide { id: string; imageUrl: string; cloudinaryPublicId: string; }
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function requireAccountId(): string {
-  const accountId = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
-  if (!accountId) throw new Error('INSTAGRAM_BUSINESS_ACCOUNT_ID is not configured');
-  return accountId;
-}
-
-function requireSlides(slides: ReadonlyArray<{ id: string; imageUrl: string | null; cloudinaryPublicId: string | null }>): ReadySlide[] {
-  return slides.map((slide) => {
-    if (!slide.imageUrl || !slide.cloudinaryPublicId) {
-      throw new Error(`Slide ${slide.id} is missing its published image metadata`);
-    }
-    return { id: slide.id, imageUrl: slide.imageUrl, cloudinaryPublicId: slide.cloudinaryPublicId };
-  });
-}
-
-async function cleanPublishedSlides(slides: ReadonlyArray<ReadySlide>): Promise<string[]> {
-  const failures: string[] = [];
-  for (const slide of slides) {
-    try {
-      await deleteSlideImage(slide.cloudinaryPublicId);
-      await prisma.slide.update({ where: { id: slide.id }, data: { imageUrl: null, imageDeletedAt: new Date() } });
-    } catch (error) {
-      failures.push(`Cloudinary cleanup failed for slide ${slide.id}: ${errorMessage(error)}`);
-    }
-  }
-  return failures;
-}
-
-async function claimPost(postId: string): Promise<boolean> {
-  const claim = await prisma.post.updateMany({
-    where: { id: postId, status: 'scheduled' },
-    data: { status: 'publishing' },
-  });
-  return claim.count === 1;
-}
-
-interface PublishablePost {
-  id: string;
-  caption: string | null;
-  slides: ReadonlyArray<{ id: string; imageUrl: string | null; cloudinaryPublicId: string | null }>;
-}
-
-async function processPost(post: PublishablePost): Promise<PublishResult> {
-  const claimed = await claimPost(post.id);
-  if (!claimed) {
-    return { claimed: false, published: false };
-  }
-
-  let slides: ReadySlide[];
-  let instagramPostId: string;
-  try {
-    slides = requireSlides(post.slides);
-    instagramPostId = await publishCarousel({
-      instagramBusinessAccountId: requireAccountId(),
-      slides: slides.map(({ imageUrl }) => ({ imageUrl })),
-      caption: post.caption ?? undefined,
-    });
-  } catch (error) {
-    await prisma.post.update({ where: { id: post.id }, data: { status: 'error', errorMessage: errorMessage(error) } });
-    return { claimed: true, published: false };
-  }
-  await prisma.post.update({
-    where: { id: post.id },
-    data: { status: 'published', publishedAt: new Date(), instagramPostId, errorMessage: null },
-  });
-  // A CommentAutomation is not auto-created/linked here — per the
-  // comment-polling design, automations are configured manually in
-  // /admin/automations against an already-published post (instagramPostId
-  // only exists once that's true).
-  const cleanupFailures = await cleanPublishedSlides(slides);
-  if (cleanupFailures.length > 0) {
-    await prisma.post.update({ where: { id: post.id }, data: { errorMessage: cleanupFailures.join('; ') } });
-  }
-  return { claimed: true, published: true };
-}
+export const maxDuration = 300;
 
 export async function POST(request: Request): Promise<Response> {
-  const expectedToken = process.env.PUBLISH_API_TOKEN;
-  const authorization = request.headers.get('authorization');
-  if (!expectedToken || authorization !== `Bearer ${expectedToken}`) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  const posts = await prisma.post.findMany({
-    where: { status: 'scheduled', scheduledAt: { lte: new Date() } },
-    include: { slides: { orderBy: { order: 'asc' } } },
-  });
-  const results: PublishResult[] = [];
-  for (const post of posts) results.push(await processPost(post));
-  const attempted = results.filter((result) => result.claimed);
-  const published = attempted.filter((result) => result.published).length;
-  return Response.json({ processed: attempted.length, published, failed: attempted.length - published });
+  if (!isPipelineAuthorized(request)) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  const owner = await acquireStage('publish');
+  if (!owner) return Response.json({ processed: 0, published: 0, failed: 0, busy: true });
+  const counts = { processed: 0, published: 0, failed: 0 };
+  let failure: string | undefined;
+  try {
+    const settings = await prisma.automationSettings.findUnique({ where: { id: 'default' } });
+    const post = await prisma.post.findFirst({
+      where: { status: 'scheduled', scheduledAt: { lte: new Date() }, instagramPostId: null,
+        publicationAttemptedAt: null,
+        OR: [{ autopilotSlot: null }, ...(settings?.enabled ? [{ autopilotSlot: {
+          gte: new Date().toISOString().slice(0, 10) + ':0',
+          lt: new Date().toISOString().slice(0, 10) + ':' + settings.dailyPostLimit,
+        } }] : [])] },
+      include: { slides: { orderBy: { order: 'asc' } } }, orderBy: { scheduledAt: 'asc' },
+    });
+    if (post) {
+      const claim = await prisma.post.updateMany({
+        where: { id: post.id, status: 'scheduled', publicationAttemptedAt: null, instagramPostId: null },
+        data: { status: 'publishing', processingStartedAt: new Date() },
+      });
+      if (claim.count === 1) {
+        counts.processed++;
+        let publicationAttempted = false;
+        try {
+          const blockers = findApprovalBlockers(post);
+          if (blockers.length) throw new Error(blockers.join(' '));
+          const accountId = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
+          if (!accountId) throw new Error('INSTAGRAM_BUSINESS_ACCOUNT_ID is not configured');
+          const instagramPostId = await publishCarousel({
+            instagramBusinessAccountId: accountId, caption: post.caption ?? undefined,
+            slides: post.slides.map(s => ({ imageUrl: s.imageUrl! })),
+          }, {
+            existingContainerId: post.instagramContainerId,
+            onContainerCreated: async id => {
+              await prisma.post.update({ where: { id: post.id }, data: { instagramContainerId: id } });
+            },
+            onPublishAttempt: async () => {
+              await prisma.post.update({ where: { id: post.id }, data: { publicationAttemptedAt: new Date() } });
+              publicationAttempted = true;
+            },
+          });
+          await prisma.post.update({ where: { id: post.id }, data: {
+            status: 'published', instagramPostId, publishedAt: new Date(), processingStartedAt: null,
+            errorMessage: null, errorStage: null, retryCount: 0, nextRetryAt: null,
+          } });
+          counts.published++;
+        } catch (error) {
+          // Once /media_publish has been called, even an HTTP rejection can race
+          // with a successful publish. Never retry automatically without first
+          // reconciling the Instagram account.
+          const uncertain = publicationAttempted || error instanceof PublicationUncertainError;
+          failure = safeError(error);
+          counts.failed++;
+          await prisma.post.update({ where: { id: post.id }, data: {
+            status: 'error', errorStage: uncertain ? 'publish_uncertain' : 'publish',
+            errorMessage: failure, processingStartedAt: null,
+            publicationAttemptedAt: uncertain ? new Date() : null,
+            ...(error instanceof ContainerExpiredError ? { instagramContainerId: null } : {}),
+            nextRetryAt: uncertain ? null : new Date(Date.now() + 15 * 60_000),
+          } });
+        }
+        if (counts.published) {
+          // Retain source images for review/recovery. Cleanup must never change
+          // a successful publication back into a publishable state.
+          try { await linkCommentAutomation(post.id); }
+          catch (error) {
+            failure = safeError(error); counts.failed++;
+            await prisma.post.update({ where: { id: post.id }, data: { errorStage: 'comment_link', errorMessage: failure } });
+          }
+        }
+      }
+    }
+  } catch (error) { counts.failed++; failure = safeError(error); }
+  await finishStage('publish', owner, counts, failure);
+  return Response.json({ ...counts, ...(failure ? { error: failure } : {}) }, { status: counts.failed ? 503 : 200 });
 }

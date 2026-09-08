@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import type { JSX } from 'react';
 import { isPrivateRepliesEnabled } from '@/lib/instagram/graphApiConfig';
 import { prisma } from '@/lib/prisma';

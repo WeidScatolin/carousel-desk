@@ -17,13 +17,17 @@ export async function POST(request: Request, { params }: RouteParams): Promise<N
 
   const post = await prisma.post.findUniqueOrThrow({ where: { id } });
 
-  await prisma.$transaction([
-    prisma.post.update({
-      where: { id },
-      data: { status: 'rejected', rejectionReason: parsed.data.reason },
-    }),
-    prisma.theme.update({ where: { id: post.themeId }, data: { status: 'pending' } }),
-  ]);
+  const changed = await prisma.$transaction(async tx => {
+    const claim = await tx.post.updateMany({
+      where: { id, status: { in: ['generating', 'pending_approval', 'scheduled', 'error', 'rejected'] },
+        publicationAttemptedAt: null, instagramPostId: null },
+      data: { status: 'rejected', rejectionReason: parsed.data.reason, nextRetryAt: null },
+    });
+    if (!claim.count) return false;
+    await tx.theme.update({ where: { id: post.themeId }, data: { status: 'pending' } });
+    return true;
+  });
+  if (!changed) return NextResponse.json({ error: 'Published or uncertain posts cannot be rejected' }, { status: 409 });
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }

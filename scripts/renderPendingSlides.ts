@@ -14,6 +14,7 @@ interface PendingSlide {
   id: string;
   postId: string;
   htmlContent: string;
+  renderVersion: number;
 }
 
 function requireEnv(name: string): string {
@@ -26,6 +27,7 @@ function requireEnv(name: string): string {
 
 async function fetchPendingSlides(appUrl: string, token: string): Promise<PendingSlide[]> {
   const response = await fetch(`${appUrl}/api/pipeline/pending-slides`, {
+    signal: AbortSignal.timeout(30_000),
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) {
@@ -35,11 +37,12 @@ async function fetchPendingSlides(appUrl: string, token: string): Promise<Pendin
   return body.slides;
 }
 
-async function reportRendered(appUrl: string, token: string, slideId: string, imageBase64: string): Promise<void> {
+async function reportRendered(appUrl: string, token: string, slideId: string, imageBase64: string, renderVersion: number): Promise<void> {
   const response = await fetch(`${appUrl}/api/pipeline/slides/${slideId}/render-complete`, {
     method: 'POST',
+    signal: AbortSignal.timeout(60_000),
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageBase64 }),
+    body: JSON.stringify({ imageBase64, renderVersion }),
   });
   if (!response.ok) {
     throw new Error(`renderPendingSlides: failed to report slide ${slideId} as rendered (${response.status})`);
@@ -58,18 +61,23 @@ async function main(): Promise<void> {
   for (const slide of slides) {
     try {
       const buffer = await renderSlideToImage(slide.htmlContent);
-      await reportRendered(appUrl, token, slide.id, buffer.toString('base64'));
+      await reportRendered(appUrl, token, slide.id, buffer.toString('base64'), slide.renderVersion);
       succeeded += 1;
     } catch (error) {
       failed += 1;
-      console.error(`renderPendingSlides: slide ${slide.id} failed:`, error instanceof Error ? error.message : error);
+      await fetch(appUrl + '/api/pipeline/slides/' + slide.id + '/render-failed', {
+        method: 'POST', signal: AbortSignal.timeout(15_000),
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ renderVersion: slide.renderVersion, error: 'Screenshot or render upload failed; inspect the render job.' }),
+      }).catch(() => undefined);
+      console.error('renderPendingSlides: screenshot or upload failed for slide ' + slide.id);
     }
   }
 
   console.log(`renderPendingSlides: done — ${succeeded} succeeded, ${failed} failed`);
-  if (failed > 0 && succeeded === 0) {
+  if (failed > 0) {
     process.exitCode = 1;
   }
 }
 
-void main();
+void main().catch(() => { console.error('renderPendingSlides: worker failed; check configuration and endpoint availability'); process.exitCode = 1; });

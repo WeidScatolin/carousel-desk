@@ -1,90 +1,94 @@
 import { getGraphApiBaseUrl, getInstagramAccessToken } from './graphApiConfig';
 
-interface GraphIdResponse {
-  id: string;
+export class PublicationUncertainError extends Error {}
+export class ContainerExpiredError extends Error {}
+export class MetaRejectedError extends Error {
+  constructor(public status: number, public code?: number) {
+    super('Instagram rejected the request (HTTP ' + status + (code ? ', code ' + code : '') + ')');
+  }
 }
 
-function parseId(payload: unknown, operation: string): GraphIdResponse {
-  if (typeof payload !== 'object' || payload === null || !('id' in payload)) {
-    throw new Error(`Instagram Graph API ${operation} returned no id`);
-  }
-  const id = (payload as Record<string, unknown>).id;
-  if (typeof id !== 'string' || id.length === 0) {
-    throw new Error(`Instagram Graph API ${operation} returned an invalid id`);
-  }
-  return { id };
-}
-
-async function postForm(
-  path: string,
-  form: URLSearchParams,
-  operation: string
-): Promise<GraphIdResponse> {
-  const response = await fetch(`${getGraphApiBaseUrl()}/${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: form,
-  });
-  const body = await response.text();
-  if (!response.ok) {
-    throw new Error(
-      `Instagram Graph API ${operation} failed with ${response.status}: ${body}`
-    );
-  }
-  let payload: unknown;
+async function postForm(path: string, form: URLSearchParams, publication = false): Promise<string> {
+  let response: Response;
+  let payload: { id?: unknown; error?: { code?: number } };
   try {
-    payload = JSON.parse(body);
+    response = await fetch(getGraphApiBaseUrl() + '/' + path, {
+      method: 'POST', signal: AbortSignal.timeout(20_000),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form,
+    });
+    payload = await response.json();
   } catch {
-    throw new Error(`Instagram Graph API ${operation} returned invalid JSON: ${body}`);
+    if (publication) throw new PublicationUncertainError('Publication response unavailable; verify Instagram before retrying');
+    throw new Error('Instagram container request failed or timed out');
   }
-  return parseId(payload, operation);
+  if (!response.ok) {
+    if (publication && response.status >= 500) throw new PublicationUncertainError('Instagram publication returned a server error; verify before retrying');
+    throw new MetaRejectedError(response.status, payload.error?.code);
+  }
+  if (typeof payload.id !== 'string' || !payload.id) {
+    if (publication) throw new PublicationUncertainError('Publication returned no media ID; verify before retrying');
+    throw new Error('Instagram container returned no id');
+  }
+  return payload.id;
 }
 
-async function createItemContainer(
-  accountId: string,
-  imageUrl: string,
-  token: string
-): Promise<string> {
-  const form = new URLSearchParams({
-    image_url: imageUrl,
-    is_carousel_item: 'true',
-    access_token: token,
-  });
-  return (await postForm(`${accountId}/media`, form, 'item container')).id;
+// Meta documents FINISHED as the state ready for publication. A bounded wait
+// keeps a serverless invocation below its deadline; the next run can resume
+// the saved container if Meta still needs time to process it.
+async function waitForContainer(containerId: string, token: string): Promise<void> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const response = await fetch(getGraphApiBaseUrl() + '/' + containerId + '?fields=status_code', {
+      headers: { Authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new MetaRejectedError(response.status);
+    const payload = await response.json() as { status_code?: string };
+    if (payload.status_code === 'FINISHED') return;
+    if (payload.status_code === 'PUBLISHED') throw new PublicationUncertainError('Container already published; reconcile the existing media ID');
+    if (payload.status_code === 'EXPIRED' || payload.status_code === 'ERROR') throw new ContainerExpiredError('Instagram container is expired or invalid');
+    if (payload.status_code !== 'IN_PROGRESS') throw new Error('Unknown Instagram container state');
+    if (attempt < 5) await new Promise(resolve => setTimeout(resolve, 3000));
+  }
+  throw new Error('Instagram container is still processing; resume it on the next attempt');
+}
+
+export function instagramImageUrl(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== 'https:') throw new Error('Instagram images require a public HTTPS URL');
+  // Cloudinary also serves legacy PNG uploads in JPEG when requested by extension.
+  if (url.hostname === 'res.cloudinary.com' && url.pathname.includes('/image/upload/')) {
+    url.pathname = url.pathname.replace(/\.(png|webp)$/i, '.jpg');
+  }
+  return url.toString();
+}
+
+export interface PublishCheckpoint {
+  existingContainerId?: string | null;
+  onContainerCreated: (id: string) => Promise<void>;
+  onPublishAttempt: () => Promise<void>;
 }
 
 export async function publishCarousel(post: {
   instagramBusinessAccountId: string;
   slides: { imageUrl: string }[];
   caption?: string;
-}): Promise<string> {
+}, checkpoint?: PublishCheckpoint): Promise<string> {
+  if (post.slides.length < 2 || post.slides.length > 10) throw new Error('Instagram carousels require 2 to 10 slides');
   const token = getInstagramAccessToken();
-  const children: string[] = [];
-  for (const slide of post.slides) {
-    children.push(
-      await createItemContainer(post.instagramBusinessAccountId, slide.imageUrl, token)
-    );
+  let containerId = checkpoint?.existingContainerId;
+  if (!containerId) {
+    const children: string[] = [];
+    for (const slide of post.slides) {
+      children.push(await postForm(post.instagramBusinessAccountId + '/media', new URLSearchParams({
+        image_url: instagramImageUrl(slide.imageUrl), is_carousel_item: 'true', access_token: token,
+      })));
+    }
+    const form = new URLSearchParams({ media_type: 'CAROUSEL', children: children.join(','), access_token: token });
+    if (post.caption) form.set('caption', post.caption);
+    containerId = await postForm(post.instagramBusinessAccountId + '/media', form);
+    await checkpoint?.onContainerCreated(containerId);
   }
-  // The Graph API takes the caption on the carousel container itself, not
-  // on individual item containers and not on the media_publish step.
-  const carouselForm: Record<string, string> = {
-    media_type: 'CAROUSEL',
-    children: children.join(','),
-    access_token: token,
-  };
-  if (post.caption) {
-    carouselForm.caption = post.caption;
-  }
-  const carousel = await postForm(
-    `${post.instagramBusinessAccountId}/media`,
-    new URLSearchParams(carouselForm),
-    'carousel container'
-  );
-  return (
-    await postForm(
-      `${post.instagramBusinessAccountId}/media_publish`,
-      new URLSearchParams({ creation_id: carousel.id, access_token: token }),
-      'publication'
-    )
-  ).id;
+  await waitForContainer(containerId, token);
+  await checkpoint?.onPublishAttempt();
+  return postForm(post.instagramBusinessAccountId + '/media_publish',
+    new URLSearchParams({ creation_id: containerId, access_token: token }), true);
 }

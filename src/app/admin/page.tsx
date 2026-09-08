@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import type { JSX } from 'react';
 import { getKanbanBoard } from '@/lib/data/kanban';
 import { AdminNav } from './AdminNav';

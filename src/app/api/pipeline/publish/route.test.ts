@@ -1,155 +1,74 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-
-vi.mock('@/lib/instagram/publishCarousel', () => ({ publishCarousel: vi.fn() }));
-vi.mock('@/lib/storage/cloudinary', () => ({ deleteSlideImage: vi.fn() }));
-
-import { publishCarousel } from '@/lib/instagram/publishCarousel';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+vi.mock('@/lib/instagram/publishCarousel', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/instagram/publishCarousel')>(), publishCarousel: vi.fn() }));
+import { publishCarousel, PublicationUncertainError, MetaRejectedError } from '@/lib/instagram/publishCarousel';
 import { prisma } from '@/lib/prisma';
-import { deleteSlideImage } from '@/lib/storage/cloudinary';
+import { fixturePost, clearFixtures } from '@/test/fixtures';
 import { POST } from './route';
+const request = () => new Request('https://test/api/pipeline/publish', { method: 'POST', headers: { Authorization: 'Bearer test-publish' } });
+const due = () => fixturePost({ status: 'scheduled', scheduledAt: new Date(Date.now() - 60_000) });
+beforeEach(() => { vi.stubEnv('PUBLISH_API_TOKEN', 'test-publish'); vi.stubEnv('INSTAGRAM_BUSINESS_ACCOUNT_ID', 'ig-test'); vi.mocked(publishCarousel).mockReset().mockResolvedValue('media-1'); });
+afterEach(async () => { await clearFixtures(); vi.unstubAllEnvs(); });
 
-describe('POST /api/pipeline/publish', () => {
-  const themeIds: string[] = [];
-
-  beforeEach(() => {
-    process.env.PUBLISH_API_TOKEN = 'publish-secret';
-    process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID = 'ig-business-1';
-    vi.mocked(publishCarousel).mockReset();
-    vi.mocked(deleteSlideImage).mockReset();
-    vi.mocked(deleteSlideImage).mockResolvedValue(undefined);
+test('rejects unauthenticated calls', async () => {
+  expect((await POST(new Request('https://test'))).status).toBe(401);
+  expect(publishCarousel).not.toHaveBeenCalled();
+});
+test('publishes due slides in order and retains source images for review', async () => {
+  const post = await due();
+  expect(await (await POST(request())).json()).toMatchObject({ processed: 1, published: 1, failed: 0 });
+  expect(publishCarousel).toHaveBeenCalledWith(expect.objectContaining({ caption: 'Legenda de teste',
+    slides: [{ imageUrl: 'https://cdn.test/0.jpg' }, { imageUrl: 'https://cdn.test/1.jpg' }] }), expect.any(Object));
+  const stored = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: { slides: true } });
+  expect(stored.status).toBe('published'); expect(stored.instagramPostId).toBe('media-1');
+  expect(stored.slides.every(s => s.imageUrl)).toBe(true);
+});
+test('pre-publication errors are visible to Actions and preserve assets', async () => {
+  const post = await due(); vi.mocked(publishCarousel).mockRejectedValue(new Error('Container unavailable'));
+  const response = await POST(request()); expect(response.status).toBe(503);
+  expect(await response.json()).toMatchObject({ failed: 1 });
+  expect(await prisma.post.findUnique({ where: { id: post.id } })).toMatchObject({ status: 'error', errorStage: 'publish', publicationAttemptedAt: null });
+});
+test('an ambiguous publication is quarantined and never automatically sent again', async () => {
+  const post = await due();
+  vi.mocked(publishCarousel).mockImplementation(async (_, checkpoint) => {
+    await checkpoint!.onContainerCreated('container-1');
+    await checkpoint!.onPublishAttempt();
+    throw new PublicationUncertainError('Response lost');
   });
-
-  afterEach(async () => {
-    await prisma.slide.deleteMany({ where: { post: { themeId: { in: themeIds } } } });
-    await prisma.post.deleteMany({ where: { themeId: { in: themeIds } } });
-    await prisma.theme.deleteMany({ where: { id: { in: themeIds } } });
-    themeIds.splice(0, themeIds.length);
-    delete process.env.PUBLISH_API_TOKEN;
-    delete process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
+  expect((await POST(request())).status).toBe(503);
+  expect(await prisma.post.findUnique({ where: { id: post.id } })).toMatchObject({
+    errorStage: 'publish_uncertain', instagramContainerId: 'container-1', publicationAttemptedAt: expect.any(Date), nextRetryAt: null,
   });
-
-  async function createScheduledPost(scheduledAt: Date = new Date(Date.now() - 60_000)) {
-    const theme = await prisma.theme.create({
-      data: {
-        sourceUrl: `https://example.com/${crypto.randomUUID()}`,
-        summary: 'Resumo de teste',
-        headlineSuggestion: 'Tema de teste',
-        status: 'approved',
-      },
-    });
-    themeIds.push(theme.id);
-    return prisma.post.create({
-      data: {
-        themeId: theme.id,
-        status: 'scheduled',
-        scheduledAt,
-        slides: {
-          create: [
-            { order: 1, template: 'evidence', htmlContent: '<html>slide 2</html>', imageUrl: 'https://cdn.test/slide-2.png', cloudinaryPublicId: 'slide-2' },
-            { order: 0, template: 'cover', htmlContent: '<html>slide 1</html>', imageUrl: 'https://cdn.test/slide-1.png', cloudinaryPublicId: 'slide-1' },
-          ],
-        },
-      },
-      include: { slides: true },
-    });
-  }
-
-  function authorizedRequest(): Request {
-    return new Request('http://localhost/api/pipeline/publish', { method: 'POST', headers: { Authorization: 'Bearer publish-secret' } });
-  }
-
-  test('returns 401 when the bearer token does not match', async () => {
-    const response = await POST(new Request('http://localhost/api/pipeline/publish', { method: 'POST', headers: { Authorization: 'Bearer wrong-token' } }));
-    expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' });
-    expect(publishCarousel).not.toHaveBeenCalled();
+  await POST(request()); expect(publishCarousel).toHaveBeenCalledTimes(1);
+});
+test('a definitive HTTP rejection after the publish checkpoint is still quarantined', async () => {
+  const post = await due();
+  vi.mocked(publishCarousel).mockImplementation(async (_, checkpoint) => {
+    await checkpoint!.onPublishAttempt();
+    throw new MetaRejectedError(400, 100);
   });
-
-  test('publishes due posts in slide order and removes their Cloudinary images', async () => {
-    const post = await createScheduledPost();
-    vi.mocked(publishCarousel).mockResolvedValue('instagram-post-1');
-    const response = await POST(authorizedRequest());
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ processed: 1, published: 1, failed: 0 });
-    expect(publishCarousel).toHaveBeenCalledWith({ instagramBusinessAccountId: 'ig-business-1', slides: [{ imageUrl: 'https://cdn.test/slide-1.png' }, { imageUrl: 'https://cdn.test/slide-2.png' }] });
-    expect(deleteSlideImage).toHaveBeenNthCalledWith(1, 'slide-1');
-    expect(deleteSlideImage).toHaveBeenNthCalledWith(2, 'slide-2');
-    const stored = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: { slides: { orderBy: { order: 'asc' } } } });
-    expect(stored.status).toBe('published');
-    expect(stored.instagramPostId).toBe('instagram-post-1');
-    expect(stored.publishedAt).toBeInstanceOf(Date);
-    expect(stored.slides.every((slide) => slide.imageUrl === null)).toBe(true);
-    expect(stored.slides.every((slide) => slide.imageDeletedAt instanceof Date)).toBe(true);
+  expect((await POST(request())).status).toBe(503);
+  expect(await prisma.post.findUnique({ where: { id: post.id } })).toMatchObject({
+    errorStage: 'publish_uncertain', publicationAttemptedAt: expect.any(Date), nextRetryAt: null,
   });
-
-  test('marks publication failure as error and preserves all Cloudinary images', async () => {
-    const post = await createScheduledPost();
-    vi.mocked(publishCarousel).mockRejectedValue(new Error('Meta unavailable'));
-    const response = await POST(authorizedRequest());
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ processed: 1, published: 0, failed: 1 });
-    const stored = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: { slides: true } });
-    expect(stored.status).toBe('error');
-    expect(stored.errorMessage).toBe('Meta unavailable');
-    // Deliberately do not clean Cloudinary after failure: images remain for inspection and reprocessing.
-    expect(deleteSlideImage).not.toHaveBeenCalled();
-    expect(stored.slides.every((slide) => slide.imageUrl !== null)).toBe(true);
-    expect(stored.slides.every((slide) => slide.imageDeletedAt === null)).toBe(true);
-  });
-
-  test('does not publish scheduled posts whose scheduled time is in the future', async () => {
-    await createScheduledPost(new Date(Date.now() + 60_000));
-    const response = await POST(authorizedRequest());
-    await expect(response.json()).resolves.toEqual({ processed: 0, published: 0, failed: 0 });
-    expect(publishCarousel).not.toHaveBeenCalled();
-    expect(deleteSlideImage).not.toHaveBeenCalled();
-  });
-
-  test('keeps the post published, records cleanup failure and continues other slides', async () => {
-    const post = await createScheduledPost();
-    vi.mocked(publishCarousel).mockResolvedValue('instagram-post-1');
-    vi.mocked(deleteSlideImage).mockRejectedValueOnce(new Error('Cloudinary unavailable')).mockResolvedValueOnce(undefined);
-    const response = await POST(authorizedRequest());
-    await expect(response.json()).resolves.toEqual({ processed: 1, published: 1, failed: 0 });
-    expect(deleteSlideImage).toHaveBeenCalledTimes(2);
-    const stored = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: { slides: { orderBy: { order: 'asc' } } } });
-    expect(stored.status).toBe('published');
-    expect(stored.errorMessage).toContain('Cloudinary cleanup failed for slide');
-    expect(stored.slides[0].imageUrl).toBe('https://cdn.test/slide-1.png');
-    expect(stored.slides[1].imageUrl).toBeNull();
-  });
-
-  test('publishes a post only once when two requests race for it concurrently', async () => {
-    await createScheduledPost();
-    vi.mocked(publishCarousel).mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve('instagram-post-1'), 20))
-    );
-    const [firstResponse, secondResponse] = await Promise.all([POST(authorizedRequest()), POST(authorizedRequest())]);
-    const [firstBody, secondBody] = await Promise.all([firstResponse.json(), secondResponse.json()]);
-    expect(publishCarousel).toHaveBeenCalledTimes(1);
-    const totalPublished = firstBody.published + secondBody.published;
-    expect(totalPublished).toBe(1);
-  });
-
-  test('is idempotent across consecutive runs after the first run publishes the post', async () => {
-    await createScheduledPost();
-    vi.mocked(publishCarousel).mockResolvedValue('instagram-post-1');
-    const firstResponse = await POST(authorizedRequest());
-    const secondResponse = await POST(authorizedRequest());
-    await expect(firstResponse.json()).resolves.toEqual({ processed: 1, published: 1, failed: 0 });
-    await expect(secondResponse.json()).resolves.toEqual({ processed: 0, published: 0, failed: 0 });
-    expect(publishCarousel).toHaveBeenCalledTimes(1);
-  });
-
-  test('passes the post caption through to publishCarousel', async () => {
-    const post = await createScheduledPost();
-    await prisma.post.update({ where: { id: post.id }, data: { caption: 'Comente "MAPA" e eu envio no seu Direct.' } });
-    vi.mocked(publishCarousel).mockResolvedValue('instagram-post-1');
-
-    await POST(authorizedRequest());
-
-    expect(publishCarousel).toHaveBeenCalledWith(
-      expect.objectContaining({ caption: 'Comente "MAPA" e eu envio no seu Direct.' }),
-    );
-  });
+  await POST(request()); expect(publishCarousel).toHaveBeenCalledTimes(1);
+});
+test('future posts remain scheduled', async () => {
+  await fixturePost({ status: 'scheduled', scheduledAt: new Date(Date.now() + 3_600_000) });
+  await POST(request()); expect(publishCarousel).not.toHaveBeenCalled();
+});
+test('concurrent requests publish a post only once', async () => {
+  await due();
+  vi.mocked(publishCarousel).mockImplementation(async () => { await new Promise(r => setTimeout(r, 20)); return 'media-1'; });
+  const responses = await Promise.all([POST(request()), POST(request())]);
+  expect(publishCarousel).toHaveBeenCalledTimes(1);
+  expect((await Promise.all(responses.map(r => r.json()))).reduce((sum, r) => sum + r.published, 0)).toBe(1);
+});
+test('subsequent runs cannot republish a completed post', async () => {
+  await due(); await POST(request()); await POST(request());
+  expect(publishCarousel).toHaveBeenCalledTimes(1);
+});
+test('pausing automatic operation holds automatic scheduled posts', async () => {
+  await fixturePost({ status: 'scheduled', scheduledAt: new Date(Date.now() - 60_000), autopilotSlot: '2026-09-08:0' });
+  await POST(request()); expect(publishCarousel).not.toHaveBeenCalled();
 });

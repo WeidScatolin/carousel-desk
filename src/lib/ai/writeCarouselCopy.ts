@@ -10,7 +10,7 @@ import { resolveProvider } from './types';
 export const COVER_MAX_WORDS = 18;
 export const BODY_MAX_CHARS = 280;
 export const MIN_SLIDES = 6;
-export const MAX_SLIDES = 13;
+export const MAX_SLIDES = 10;
 
 const SLIDE_ROLES = [
   'cover',

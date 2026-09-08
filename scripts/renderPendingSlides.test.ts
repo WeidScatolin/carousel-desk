@@ -18,6 +18,7 @@ describe('renderPendingSlides', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    process.exitCode = 0;
     delete process.env.APP_URL;
     delete process.env.PUBLISH_API_TOKEN;
   });
@@ -25,7 +26,7 @@ describe('renderPendingSlides', () => {
   test('renders every pending slide and reports each one back as base64', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ slides: [{ id: 's1', postId: 'p1', htmlContent: '<html>1</html>' }, { id: 's2', postId: 'p1', htmlContent: '<html>2</html>' }] }))
+      .mockResolvedValueOnce(jsonResponse({ slides: [{ id: 's1', postId: 'p1', renderVersion: 0, htmlContent: '<html>1</html>' }, { id: 's2', postId: 'p1', renderVersion: 0, htmlContent: '<html>2</html>' }] }))
       .mockResolvedValueOnce(jsonResponse({ ok: true }))
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
     vi.stubGlobal('fetch', fetchMock);
@@ -44,7 +45,7 @@ describe('renderPendingSlides', () => {
       'https://carousel-desk.test/api/pipeline/slides/s1/render-complete',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ imageBase64: Buffer.from('fake-png').toString('base64') }),
+        body: JSON.stringify({ imageBase64: Buffer.from('fake-png').toString('base64'), renderVersion: 0 }),
       }),
     );
   });
@@ -52,7 +53,8 @@ describe('renderPendingSlides', () => {
   test('keeps going when one slide fails to render, and reports the rest', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ slides: [{ id: 's1', postId: 'p1', htmlContent: '<html>1</html>' }, { id: 's2', postId: 'p1', htmlContent: '<html>2</html>' }] }))
+      .mockResolvedValueOnce(jsonResponse({ slides: [{ id: 's1', postId: 'p1', renderVersion: 0, htmlContent: '<html>1</html>' }, { id: 's2', postId: 'p1', renderVersion: 0, htmlContent: '<html>2</html>' }] }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
       .mockResolvedValueOnce(jsonResponse({ ok: true }));
     vi.stubGlobal('fetch', fetchMock);
     vi.mocked(renderSlideToImage).mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(Buffer.from('fake-png'));
@@ -60,7 +62,7 @@ describe('renderPendingSlides', () => {
     await import('./renderPendingSlides');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // Only slide 2 (the one that rendered) gets reported.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(process.exitCode).toBe(1);
   });
 });

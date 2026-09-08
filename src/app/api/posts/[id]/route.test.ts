@@ -1,50 +1,18 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest';
-
-vi.mock('@/lib/prisma', () => ({
-  prisma: { post: { update: vi.fn() } },
-}));
-
+import { afterEach, expect, test } from 'vitest';
 import { prisma } from '@/lib/prisma';
+import { fixturePost, clearFixtures } from '@/test/fixtures';
 import { PATCH } from './route';
-
-function patchRequest(body: unknown): Request {
-  return new Request('http://localhost/api/posts/post-1', { method: 'PATCH', body: JSON.stringify(body) });
-}
-
-describe('PATCH /api/posts/[id]', () => {
-  beforeEach(() => {
-    vi.mocked(prisma.post.update).mockReset();
-  });
-
-  test('returns 400 for an invalid payload', async () => {
-    const response = await PATCH(patchRequest({ caption: '' }), { params: Promise.resolve({ id: 'post-1' }) });
-
-    expect(response.status).toBe(400);
-    expect(prisma.post.update).not.toHaveBeenCalled();
-  });
-
-  test('updates only the given fields, uppercasing ctaKeyword', async () => {
-    vi.mocked(prisma.post.update).mockResolvedValue({ id: 'post-1' } as never);
-
-    const response = await PATCH(patchRequest({ caption: 'Nova legenda', ctaKeyword: 'mapa' }), {
-      params: Promise.resolve({ id: 'post-1' }),
-    });
-
-    expect(prisma.post.update).toHaveBeenCalledWith({
-      where: { id: 'post-1' },
-      data: { caption: 'Nova legenda', ctaKeyword: 'MAPA' },
-    });
-    expect(response.status).toBe(200);
-  });
-
-  test('allows clearing ctaKeyword and leadMagnetId with null', async () => {
-    vi.mocked(prisma.post.update).mockResolvedValue({ id: 'post-1' } as never);
-
-    await PATCH(patchRequest({ ctaKeyword: null, leadMagnetId: null }), { params: Promise.resolve({ id: 'post-1' }) });
-
-    expect(prisma.post.update).toHaveBeenCalledWith({
-      where: { id: 'post-1' },
-      data: { ctaKeyword: null, leadMagnetId: null },
-    });
-  });
+const req = (body: unknown) => new Request('https://test', { method: 'PATCH', body: JSON.stringify(body) });
+afterEach(clearFixtures);
+test('edits a draft and clears any obsolete container', async () => {
+  const post = await fixturePost({ instagramContainerId: 'old-container' });
+  expect((await PATCH(req({ caption: 'Nova legenda', ctaKeyword: 'mapa' }), { params: Promise.resolve({ id: post.id }) })).status).toBe(200);
+  expect(await prisma.post.findUnique({ where: { id: post.id } })).toMatchObject({ caption: 'Nova legenda', ctaKeyword: 'MAPA', instagramContainerId: null });
+});
+test.each(['scheduled', 'publishing', 'published'] as const)('does not change a %s post', async status => {
+  const post = await fixturePost({ status });
+  expect((await PATCH(req({ caption: 'Outra legenda' }), { params: Promise.resolve({ id: post.id }) })).status).toBe(409);
+});
+test('rejects invalid payload', async () => {
+  expect((await PATCH(req({ caption: '' }), { params: Promise.resolve({ id: 'missing' }) })).status).toBe(400);
 });

@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 const LINKS = [
   { href: '/admin', label: 'Quadro' },
+  { href: '/admin/operation', label: 'Operação' },
   { href: '/admin/strategy', label: 'Estratégia da marca' },
   { href: '/admin/lead-magnets', label: 'Lead magnets' },
   { href: '/admin/automations', label: 'Automações' },

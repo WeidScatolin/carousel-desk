@@ -21,15 +21,19 @@ export async function POST(request: Request, { params }: RouteParams): Promise<N
     include: { slides: true },
   });
 
+  if (post.status !== 'pending_approval' || post.publicationAttemptedAt || post.instagramPostId) {
+    return NextResponse.json({ error: 'Post is not awaiting approval' }, { status: 409 });
+  }
   const blockers = findApprovalBlockers(post);
   if (blockers.length > 0) {
     return NextResponse.json({ error: 'Post is not ready for approval', blockers }, { status: 422 });
   }
 
-  await prisma.post.update({
-    where: { id },
+  const claim = await prisma.post.updateMany({
+    where: { id, status: 'pending_approval', publicationAttemptedAt: null, instagramPostId: null },
     data: { status: 'scheduled', scheduledAt: new Date(parsed.data.scheduledAt) },
   });
 
+  if (claim.count !== 1) return NextResponse.json({ error: 'Post changed; reload it' }, { status: 409 });
   return NextResponse.json({ ok: true }, { status: 200 });
 }

@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@/lib/prisma', () => ({ prisma: { theme: { update: vi.fn() } } }));
+vi.mock('@/lib/prisma', () => ({ prisma: { theme: { update: vi.fn() }, post: { findFirst: vi.fn().mockResolvedValue(null) } } }));
 vi.mock('@/lib/pipeline/generatePostFromTheme', () => ({ generatePostFromTheme: vi.fn() }));
 
 import { prisma } from '@/lib/prisma';
@@ -23,10 +23,7 @@ describe('POST /api/themes/[id]/approve', () => {
     const response = await POST(buildRequest(), { params: Promise.resolve({ id: 'theme-1' }) });
     const body = await response.json();
 
-    expect(prisma.theme.update).toHaveBeenCalledWith({
-      where: { id: 'theme-1' },
-      data: { status: 'approved' },
-    });
+    expect(prisma.theme.update).not.toHaveBeenCalled();
     expect(generatePostFromTheme).toHaveBeenCalledWith('theme-1');
     expect(response.status).toBe(200);
     expect(body).toEqual({ postId: 'post-1' });

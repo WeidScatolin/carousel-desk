@@ -1,147 +1,30 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest';
-
-vi.mock('@/lib/prisma', () => ({
-  prisma: { slide: { findUniqueOrThrow: vi.fn(), update: vi.fn(), count: vi.fn() } },
-}));
-vi.mock('@/lib/ai/generateSlideHtml', () => ({ generateSlideHtml: vi.fn() }));
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+vi.mock('@/lib/ai/generateSlideHtml', () => ({ generateSlideHtml: vi.fn().mockResolvedValue('<html>novo</html>') }));
 vi.mock('@/lib/render/renderSlideToImage', () => ({ renderSlideToImage: vi.fn() }));
-vi.mock('@/lib/storage/cloudinary', () => ({ uploadSlideImage: vi.fn(), deleteSlideImage: vi.fn() }));
-
 import { prisma } from '@/lib/prisma';
 import { generateSlideHtml } from '@/lib/ai/generateSlideHtml';
 import { renderSlideToImage } from '@/lib/render/renderSlideToImage';
-import { uploadSlideImage, deleteSlideImage } from '@/lib/storage/cloudinary';
+import { fixturePost, fixtureBrand, clearFixtures } from '@/test/fixtures';
 import { PATCH } from './route';
-
-function buildRequest(body: unknown): Request {
-  return new Request('http://localhost/api/slides/slide-1', {
-    method: 'PATCH',
-    body: JSON.stringify(body),
-  });
-}
-
-const baseSlide = {
-  id: 'slide-1',
-  postId: 'post-1',
-  order: 2,
-  template: 'cover_cinematic',
-  cloudinaryPublicId: 'old-public-id',
-  sourceImageUrl: 'https://example.com/original-photo.jpg',
-  accentPhrase: 'não escala',
-  kicker: 'Radar',
-  sourceLabel: 'TechCrunch, 2026',
-};
-
-describe('PATCH /api/slides/[id]', () => {
-  beforeEach(() => {
-    vi.mocked(prisma.slide.findUniqueOrThrow).mockReset();
-    vi.mocked(prisma.slide.update).mockReset();
-    vi.mocked(prisma.slide.count).mockReset();
-    vi.mocked(generateSlideHtml).mockReset();
-    vi.mocked(renderSlideToImage).mockReset();
-    vi.mocked(uploadSlideImage).mockReset();
-    vi.mocked(deleteSlideImage).mockReset();
-  });
-
-  test('returns 400 when headline or body is missing', async () => {
-    const response = await PATCH(buildRequest({ headline: 'Só título' }), {
-      params: Promise.resolve({ id: 'slide-1' }),
-    });
-
-    expect(response.status).toBe(400);
-  });
-
-  test('regenerates HTML and image, deletes the old Cloudinary asset, and updates the slide', async () => {
-    vi.mocked(prisma.slide.findUniqueOrThrow).mockResolvedValue(baseSlide as never);
-    vi.mocked(prisma.slide.count).mockResolvedValue(9);
-    vi.mocked(generateSlideHtml).mockResolvedValue('<html>novo</html>');
-    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
-    vi.mocked(uploadSlideImage).mockResolvedValue({
-      url: 'https://cloudinary.test/new.png',
-      publicId: 'new-public-id',
-    });
-    vi.mocked(prisma.slide.update).mockResolvedValue({ id: 'slide-1' } as never);
-
-    const response = await PATCH(buildRequest({ headline: 'Novo título', body: 'Novo corpo' }), {
-      params: Promise.resolve({ id: 'slide-1' }),
-    });
-
-    expect(deleteSlideImage).toHaveBeenCalledWith('old-public-id');
-    expect(prisma.slide.update).toHaveBeenCalledWith({
-      where: { id: 'slide-1' },
-      data: {
-        headline: 'Novo título',
-        body: 'Novo corpo',
-        htmlContent: '<html>novo</html>',
-        imageUrl: 'https://cloudinary.test/new.png',
-        cloudinaryPublicId: 'new-public-id',
-        accentPhrase: 'não escala',
-      },
-    });
-    expect(response.status).toBe(200);
-  });
-
-  test('accepts an explicit accentPhrase override, including clearing it with null', async () => {
-    vi.mocked(prisma.slide.findUniqueOrThrow).mockResolvedValue(baseSlide as never);
-    vi.mocked(prisma.slide.count).mockResolvedValue(9);
-    vi.mocked(generateSlideHtml).mockResolvedValue('<html>novo</html>');
-    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
-    vi.mocked(uploadSlideImage).mockResolvedValue({ url: 'https://cloudinary.test/new.png', publicId: 'new-id' });
-    vi.mocked(prisma.slide.update).mockResolvedValue({ id: 'slide-1' } as never);
-
-    await PATCH(buildRequest({ headline: 'Novo título', body: 'Novo corpo', accentPhrase: null }), {
-      params: Promise.resolve({ id: 'slide-1' }),
-    });
-
-    expect(generateSlideHtml).toHaveBeenCalledWith(
-      expect.objectContaining({ accentPhrase: null }),
-      'https://example.com/original-photo.jpg',
-    );
-    expect(prisma.slide.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ accentPhrase: null }) }),
-    );
-  });
-
-  test('preserves the original background photo, accentPhrase, kicker, sourceLabel and slide numbering on edit', async () => {
-    vi.mocked(prisma.slide.findUniqueOrThrow).mockResolvedValue(baseSlide as never);
-    vi.mocked(prisma.slide.count).mockResolvedValue(9);
-    vi.mocked(generateSlideHtml).mockResolvedValue('<html>novo</html>');
-    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
-    vi.mocked(uploadSlideImage).mockResolvedValue({ url: 'https://cloudinary.test/new.png', publicId: 'new-id' });
-    vi.mocked(prisma.slide.update).mockResolvedValue({ id: 'slide-1' } as never);
-
-    await PATCH(buildRequest({ headline: 'Novo título', body: 'Novo corpo' }), {
-      params: Promise.resolve({ id: 'slide-1' }),
-    });
-
-    expect(generateSlideHtml).toHaveBeenCalledWith(
-      {
-        template: 'cover_cinematic',
-        headline: 'Novo título',
-        body: 'Novo corpo',
-        accentPhrase: 'não escala',
-        kicker: 'Radar',
-        sourceLabel: 'TechCrunch, 2026',
-        slideNumber: 3,
-        totalSlides: 9,
-      },
-      'https://example.com/original-photo.jpg',
-    );
-  });
-
-  test('supports editing every slide template, including the new Fase 5 templates', async () => {
-    vi.mocked(prisma.slide.findUniqueOrThrow).mockResolvedValue({ ...baseSlide, template: 'risk' } as never);
-    vi.mocked(prisma.slide.count).mockResolvedValue(9);
-    vi.mocked(generateSlideHtml).mockResolvedValue('<html>novo</html>');
-    vi.mocked(renderSlideToImage).mockResolvedValue(Buffer.from('fake-png'));
-    vi.mocked(uploadSlideImage).mockResolvedValue({ url: 'https://cloudinary.test/new.png', publicId: 'new-id' });
-    vi.mocked(prisma.slide.update).mockResolvedValue({ id: 'slide-1' } as never);
-
-    const response = await PATCH(buildRequest({ headline: 'Novo título', body: 'Novo corpo' }), {
-      params: Promise.resolve({ id: 'slide-1' }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(generateSlideHtml).toHaveBeenCalledTimes(1);
-  });
+const request = (body = { headline: 'Novo título', body: 'Novo corpo' }) => new Request('https://test', { method: 'PATCH', body: JSON.stringify(body) });
+beforeEach(() => vi.clearAllMocks());
+afterEach(clearFixtures);
+test('edits enqueue rendering and preserve the original composition', async () => {
+  const post = await fixturePost(); const brand = await fixtureBrand();
+  const id = post.slides[0].id;
+  await prisma.slide.update({ where: { id }, data: { sourceImageUrl: 'https://example.test/photo.jpg', kicker: 'Radar', accentPhrase: 'Importante' } });
+  const response = await PATCH(request(), { params: Promise.resolve({ id }) });
+  expect(response.status).toBe(202);
+  expect(renderSlideToImage).not.toHaveBeenCalled();
+  expect(generateSlideHtml).toHaveBeenCalledWith(expect.objectContaining({ kicker: 'Radar', accentPhrase: 'Importante', instagramHandle: brand.instagramHandle, slideNumber: 1, totalSlides: 2 }), 'https://example.test/photo.jpg');
+  expect(await prisma.slide.findUnique({ where: { id } })).toMatchObject({ imageUrl: null, renderVersion: 1, htmlContent: '<html>novo</html>' });
+  expect(await prisma.post.findUnique({ where: { id: post.id } })).toMatchObject({ status: 'generating', generationComplete: true });
+});
+test.each(['scheduled', 'publishing', 'published', 'generating'] as const)('cannot modify a %s post', async status => {
+  const post = await fixturePost({ status });
+  expect((await PATCH(request(), { params: Promise.resolve({ id: post.slides[0].id }) })).status).toBe(409);
+  expect(generateSlideHtml).not.toHaveBeenCalled();
+});
+test('rejects incomplete edits', async () => {
+  expect((await PATCH(request({ headline: 'Título' } as never), { params: Promise.resolve({ id: 'missing' }) })).status).toBe(400);
 });

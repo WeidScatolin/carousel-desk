@@ -1,196 +1,52 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { publishCarousel } from './publishCarousel';
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { publishCarousel, PublicationUncertainError, ContainerExpiredError, instagramImageUrl } from './publishCarousel';
+const input = { instagramBusinessAccountId: 'ig-test', slides: [{ imageUrl: 'https://cdn.test/1.jpg' }, { imageUrl: 'https://cdn.test/2.jpg' }], caption: 'Legenda' };
+const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+beforeEach(() => vi.stubEnv('INSTAGRAM_ACCESS_TOKEN', 'fake-token'));
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+test('waits for FINISHED and persists checkpoints before publishing', async () => {
+  const events: string[] = [];
+  const mock = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(response({ id: 'item1' })).mockResolvedValueOnce(response({ id: 'item2' }))
+    .mockResolvedValueOnce(response({ id: 'container' })).mockResolvedValueOnce(response({ status_code: 'FINISHED' }))
+    .mockImplementationOnce(async () => { events.push('publish'); return response({ id: 'media' }); });
+  vi.stubGlobal('fetch', mock);
+  const id = await publishCarousel(input, {
+    onContainerCreated: async id => { events.push(id); }, onPublishAttempt: async () => { events.push('checkpoint'); },
   });
-}
+  expect(id).toBe('media'); expect(events).toEqual(['container', 'checkpoint', 'publish']);
+  expect(mock.mock.calls[2][1]?.body).toEqual(new URLSearchParams({
+    media_type: 'CAROUSEL', children: 'item1,item2', access_token: 'fake-token', caption: 'Legenda',
+  }));
+  expect(mock.mock.calls[3][0]).toContain('fields=status_code');
+});
+test('resumes a saved container without creating children again', async () => {
+  const mock = vi.fn<typeof fetch>().mockResolvedValueOnce(response({ status_code: 'FINISHED' })).mockResolvedValueOnce(response({ id: 'media' }));
+  vi.stubGlobal('fetch', mock);
+  await publishCarousel(input, { existingContainerId: 'saved', onContainerCreated: vi.fn(), onPublishAttempt: vi.fn() });
+  expect(mock).toHaveBeenCalledTimes(2);
+  expect(mock.mock.calls[1][0]).toContain('/media_publish');
+});
+test('does not publish an expired container', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ status_code: 'EXPIRED' })));
+  await expect(publishCarousel(input, { existingContainerId: 'saved', onContainerCreated: vi.fn(), onPublishAttempt: vi.fn() })).rejects.toBeInstanceOf(ContainerExpiredError);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+test('marks a lost publish response as uncertain', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(response({ status_code: 'FINISHED' })).mockRejectedValueOnce(new Error('timeout')));
+  await expect(publishCarousel(input, { existingContainerId: 'saved', onContainerCreated: vi.fn(), onPublishAttempt: vi.fn() })).rejects.toBeInstanceOf(PublicationUncertainError);
+});
+test('does not treat an HTTP success without a media ID as publication success', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(response({ status_code: 'FINISHED' })).mockResolvedValueOnce(response({})));
+  await expect(publishCarousel(input, { existingContainerId: 'saved', onContainerCreated: vi.fn(), onPublishAttempt: vi.fn() })).rejects.toBeInstanceOf(PublicationUncertainError);
+});
+test.each([1, 11])('rejects %i slides without contacting Meta', async n => {
+  vi.stubGlobal('fetch', vi.fn());
+  await expect(publishCarousel({ ...input, slides: Array.from({ length: n }, () => input.slides[0]) })).rejects.toThrow('2 to 10');
+  expect(fetch).not.toHaveBeenCalled();
+});
 
-describe('publishCarousel', () => {
-  beforeEach(() => {
-    process.env.INSTAGRAM_ACCESS_TOKEN = 'test-access-token';
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    delete process.env.INSTAGRAM_ACCESS_TOKEN;
-  });
-
-  test('creates item containers, creates the carousel and publishes it', async () => {
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ id: 'item-1' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'item-2' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'carousel-1' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'instagram-post-1' }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const result = await publishCarousel({
-      instagramBusinessAccountId: 'ig-user-1',
-      slides: [
-        { imageUrl: 'https://cdn.test/slide-1.png' },
-        { imageUrl: 'https://cdn.test/slide-2.png' },
-      ],
-    });
-
-    expect(result).toBe('instagram-post-1');
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      'https://graph.instagram.com/v26.0/ig-user-1/media',
-      expect.objectContaining({
-        method: 'POST',
-        body: new URLSearchParams({
-          image_url: 'https://cdn.test/slide-1.png',
-          is_carousel_item: 'true',
-          access_token: 'test-access-token',
-        }),
-      })
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      'https://graph.instagram.com/v26.0/ig-user-1/media',
-      expect.objectContaining({
-        method: 'POST',
-        body: new URLSearchParams({
-          image_url: 'https://cdn.test/slide-2.png',
-          is_carousel_item: 'true',
-          access_token: 'test-access-token',
-        }),
-      })
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
-      'https://graph.instagram.com/v26.0/ig-user-1/media',
-      expect.objectContaining({
-        method: 'POST',
-        body: new URLSearchParams({
-          media_type: 'CAROUSEL',
-          children: 'item-1,item-2',
-          access_token: 'test-access-token',
-        }),
-      })
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
-      'https://graph.instagram.com/v26.0/ig-user-1/media_publish',
-      expect.objectContaining({
-        method: 'POST',
-        body: new URLSearchParams({
-          creation_id: 'carousel-1',
-          access_token: 'test-access-token',
-        }),
-      })
-    );
-  });
-
-  test('includes the caption on the carousel container, not on item containers or media_publish', async () => {
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ id: 'item-1' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'carousel-1' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'instagram-post-1' }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await publishCarousel({
-      instagramBusinessAccountId: 'ig-user-1',
-      slides: [{ imageUrl: 'https://cdn.test/slide-1.png' }],
-      caption: 'Comente "MAPA" e eu envio no seu Direct.',
-    });
-
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      'https://graph.instagram.com/v26.0/ig-user-1/media',
-      expect.objectContaining({
-        body: new URLSearchParams({
-          image_url: 'https://cdn.test/slide-1.png',
-          is_carousel_item: 'true',
-          access_token: 'test-access-token',
-        }),
-      }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      'https://graph.instagram.com/v26.0/ig-user-1/media',
-      expect.objectContaining({
-        body: new URLSearchParams({
-          media_type: 'CAROUSEL',
-          children: 'item-1',
-          access_token: 'test-access-token',
-          caption: 'Comente "MAPA" e eu envio no seu Direct.',
-        }),
-      }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
-      'https://graph.instagram.com/v26.0/ig-user-1/media_publish',
-      expect.objectContaining({
-        body: new URLSearchParams({ creation_id: 'carousel-1', access_token: 'test-access-token' }),
-      }),
-    );
-  });
-
-  test('omits the caption field entirely when no caption is given', async () => {
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ id: 'item-1' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'carousel-1' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'instagram-post-1' }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await publishCarousel({
-      instagramBusinessAccountId: 'ig-user-1',
-      slides: [{ imageUrl: 'https://cdn.test/slide-1.png' }],
-    });
-
-    const carouselCall = fetchMock.mock.calls[1];
-    const body = carouselCall?.[1]?.body as URLSearchParams;
-    expect(body.has('caption')).toBe(false);
-  });
-
-  test('throws a clear error with the Meta body when an item container fails', async () => {
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ id: 'item-1' }))
-      .mockResolvedValueOnce(
-        jsonResponse({ error: { message: 'Unsupported image format' } }, 400)
-      );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(
-      publishCarousel({
-        instagramBusinessAccountId: 'ig-user-1',
-        slides: [
-          { imageUrl: 'https://cdn.test/slide-1.png' },
-          { imageUrl: 'https://cdn.test/slide-2.png' },
-        ],
-      })
-    ).rejects.toThrow(
-      'Instagram Graph API item container failed with 400: {"error":{"message":"Unsupported image format"}}'
-    );
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  test('throws a clear error with the Meta body when final publication fails', async () => {
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ id: 'item-1' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'carousel-1' }))
-      .mockResolvedValueOnce(
-        jsonResponse({ error: { message: 'Media is not ready' } }, 500)
-      );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(
-      publishCarousel({
-        instagramBusinessAccountId: 'ig-user-1',
-        slides: [{ imageUrl: 'https://cdn.test/slide-1.png' }],
-      })
-    ).rejects.toThrow(
-      'Instagram Graph API publication failed with 500: {"error":{"message":"Media is not ready"}}'
-    );
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
+test('requests a JPEG derivative for legacy Cloudinary PNG slides', () => {
+  expect(instagramImageUrl('https://res.cloudinary.com/demo/image/upload/v1/slides/slide.png'))
+    .toBe('https://res.cloudinary.com/demo/image/upload/v1/slides/slide.jpg');
 });

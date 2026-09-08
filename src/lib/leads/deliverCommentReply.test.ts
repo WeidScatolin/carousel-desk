@@ -50,6 +50,6 @@ describe('deliverCommentReply', () => {
     const outcome = await deliverCommentReply('comment-1', 'Oi!');
 
     expect(outcome.status).toBe('FAILED');
-    expect(outcome.lastError).toContain('boom');
+    expect(outcome.lastError).toContain('HTTP 400');
   });
 });
