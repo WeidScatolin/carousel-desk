@@ -1,8 +1,8 @@
 name: Render pending carousel slides
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
+  # Recovery-only entry point. The autonomous workflow renders pending slides
+  # in the same run that generates them.
   workflow_dispatch:
 
 permissions:

@@ -1,7 +1,7 @@
 name: Publish scheduled Instagram posts
 on:
-  schedule:
-    - cron: "*/15 * * * *"
+  # Recovery-only entry point. The autonomous workflow checks due posts every
+  # 15 minutes and publishes at most the item claimed by the API.
   workflow_dispatch:
 permissions:
   contents: read
