@@ -11,14 +11,43 @@ concurrency:
 jobs:
   autopilot:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - name: Call autopilot endpoint
+          cache: npm
+      - name: Select or generate today's carousel
         env:
           APP_URL: ${{ secrets.APP_URL }}
           PUBLISH_API_TOKEN: ${{ secrets.PUBLISH_API_TOKEN }}
         run: node scripts/callPipeline.mjs autopilot
+      - name: Check for slides awaiting render
+        id: pending-slides
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          PUBLISH_API_TOKEN: ${{ secrets.PUBLISH_API_TOKEN }}
+        run: node scripts/checkPendingSlides.mjs
+      - name: Install dependencies
+        if: steps.pending-slides.outputs.count != '0'
+        run: npm ci
+      - name: Install Playwright Chromium
+        if: steps.pending-slides.outputs.count != '0'
+        run: npx playwright install --with-deps chromium
+      - name: Render pending slides
+        if: steps.pending-slides.outputs.count != '0'
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          PUBLISH_API_TOKEN: ${{ secrets.PUBLISH_API_TOKEN }}
+        run: npx tsx scripts/renderPendingSlides.ts
+      - name: Validate and schedule rendered carousel
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          PUBLISH_API_TOKEN: ${{ secrets.PUBLISH_API_TOKEN }}
+        run: node scripts/callPipeline.mjs autopilot
+      - name: Publish posts whose configured time has arrived
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          PUBLISH_API_TOKEN: ${{ secrets.PUBLISH_API_TOKEN }}
+        run: node scripts/callPipeline.mjs publish
